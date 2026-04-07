@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
 """
-install.py — Nexus installer
-Installs all dependencies for the Nexus central hub and registers it as a
-boot-time service (systemd on Linux, launchd on macOS).
-
-Usage:
-    sudo python3 install.py            # full install + service
-    python3 install.py --check         # dry run — show what would change
-    python3 install.py --skip-python   # skip pip install stage
-    python3 install.py --skip-service  # skip service registration
-    python3 install.py --uninstall     # remove service and unload it
+Nexus — Hub Flask Web Application
+Install script for /opt/pr0t31n/Nexus/
 """
 
 import argparse
@@ -20,196 +12,231 @@ import subprocess
 import sys
 from pathlib import Path
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Colour helpers (ANSI — gracefully degraded on Windows)
-# ─────────────────────────────────────────────────────────────────────────────
-
-RESET  = "\033[0m"
-GREEN  = "\033[32m"
-YELLOW = "\033[33m"
-RED    = "\033[31m"
-CYAN   = "\033[36m"
-BOLD   = "\033[1m"
-
-SYSTEM   = platform.system()
-IS_MACOS = SYSTEM == "Darwin"
-IS_LINUX = SYSTEM == "Linux"
-
-APP_NAME    = "nexus"
-DISPLAY     = "Nexus — Central Hub"
-PORT        = 5400
-APP_DIR     = Path(__file__).parent.resolve()
-MAIN_SCRIPT = str(APP_DIR / "app.py")
-
-
-def _print(msg: str, colour: str = RESET) -> None:
-    print(f"{colour}{msg}{RESET}", flush=True)
-
-def ok(msg: str)   -> None: _print(f"[+] {msg}", GREEN)
-def info(msg: str) -> None: _print(f"[*] {msg}", CYAN)
-def warn(msg: str) -> None: _print(f"[~] {msg}", YELLOW)
-def err(msg: str)  -> None: _print(f"[!] {msg}", RED)
-
-def run_silent(cmd: list, *, timeout: int = 300) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd, capture_output=True, text=True, timeout=timeout,
-        env=os.environ.copy(),
-    )
-
-def which(name: str) -> str | None:
-    return shutil.which(name)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Python packages
+# ─── ANSI colours ────────────────────────────────────────────────────────────
+R  = "\033[1;31m"
+G  = "\033[1;32m"
+Y  = "\033[1;33m"
+B  = "\033[1;34m"
+C  = "\033[1;36m"
+W  = "\033[0m"
 # ─────────────────────────────────────────────────────────────────────────────
 
-PIP_PACKAGES: list[tuple[str, str]] = [
-    # Flask — Armin Ronacher @mitsuhiko — https://github.com/pallets/flask
-    ("flask>=3.0.0",           "Flask web framework — Nexus server"),
-    # Flask-SocketIO — Miguel Grinberg @miguelgrinberg — https://github.com/miguelgrinberg/Flask-SocketIO
-    ("flask-socketio>=5.3.0",  "WebSocket real-time push — live instance updates"),
-    # eventlet — eventlet contributors — https://github.com/eventlet/eventlet
-    ("eventlet>=0.35.0",       "Async networking for Flask-SocketIO"),
-    # Requests — Kenneth Reitz @psf — https://github.com/psf/requests
-    ("requests>=2.28.0",       "HTTP client — queries /api/nexus-status on discovered apps"),
-    # Werkzeug — Pallets team — https://github.com/pallets/werkzeug
-    ("werkzeug>=3.0.0",        "Password hashing (generate_password_hash / check_password_hash)"),
+APP_NAME     = "Nexus"
+APP_DIR      = Path("/opt/pr0t31n/Nexus")
+SERVICE_NAME = "pr0t31n-nexus"
+APP_PORT     = 5000
+
+SYSTEMD_UNIT = Path(f"/etc/systemd/system/{SERVICE_NAME}.service")
+LAUNCHD_PLIST = Path(f"/Library/LaunchDaemons/com.pr0t31n.nexus.plist")
+
+# system package lists --------------------------------------------------------
+APT_PKGS    = ["python3-pip", "python3-dev", "git", "openssl",
+               "libssl-dev", "nmap"]
+DNF_PKGS    = ["python3-pip", "python3-devel", "git", "openssl",
+               "openssl-devel", "nmap"]
+ZYPPER_PKGS = ["python3-pip", "python3-devel", "git", "openssl",
+               "libopenssl-devel", "nmap"]
+BREW_PKGS   = ["openssl", "nmap", "git"]
+
+# pip packages ----------------------------------------------------------------
+PIP_PKGS = [
+    "flask>=3.0.0",
+    "flask-socketio>=5.3.0",
+    "eventlet>=0.35.0",
+    "requests>=2.28.0",
 ]
 
+# ─── helpers ─────────────────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────────────────────
-# System packages
-# ─────────────────────────────────────────────────────────────────────────────
-
-APT_PACKAGES: list[tuple[str, str]] = [
-    ("openssl",       "TLS certificate generation (self-signed RSA-4096)"),
-    ("python3-pip",   "Python 3 pip"),
-    ("python3-dev",   "Python 3 headers"),
-    ("git",           "Git version control"),
-]
-
-BREW_PACKAGES: list[tuple[str, str]] = [
-    ("openssl", "TLS certificate generation"),
-]
+def banner():
+    print(f"""
+{C}╔══════════════════════════════════════════════╗
+║        Nexus — Hub Flask Web Application     ║
+║        Install Script                        ║
+╚══════════════════════════════════════════════╝{W}
+""")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Privilege helpers
-# ─────────────────────────────────────────────────────────────────────────────
+def info(msg):  print(f"{G}[+]{W} {msg}")
+def warn(msg):  print(f"{Y}[!]{W} {msg}")
+def err(msg):   print(f"{R}[✗]{W} {msg}")
+def step(msg):  print(f"\n{B}━━ {msg} ━━{W}")
 
-def require_root() -> None:
-    if os.geteuid() != 0:
-        err("This installer must be run as root or via sudo.")
-        err("    sudo python3 install.py")
+
+def run(cmd, **kwargs):
+    print(f"    {C}>{W} {' '.join(str(c) for c in cmd)}")
+    result = subprocess.run(cmd, **kwargs)
+    if result.returncode != 0:
+        raise RuntimeError(f"Command failed: {' '.join(str(c) for c in cmd)}")
+    return result
+
+
+def run_ok(cmd, **kwargs):
+    try:
+        subprocess.run(cmd, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       **kwargs)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def require_root():
+    if platform.system() != "Darwin" and os.geteuid() != 0:
+        err("This script must be run as root (or with sudo) on Linux.")
         sys.exit(1)
-    info("Running as root — OK")
 
 
-def _brew_cmd() -> str | None:
-    """Return path to brew, checking common non-root install locations."""
-    for candidate in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]:
-        if os.path.isfile(candidate):
-            return candidate
-    return which("brew")
+def detect_os():
+    system = platform.system()
+    if system == "Darwin":
+        return "macos"
+    if system == "Windows":
+        return "windows"
+    os_release = {}
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    os_release[k] = v.strip('"')
+    except FileNotFoundError:
+        pass
+    dist_id = os_release.get("ID", "").lower()
+    id_like  = os_release.get("ID_LIKE", "").lower()
+    if dist_id in ("kali", "ubuntu", "debian") or "debian" in id_like:
+        return "apt"
+    if dist_id in ("rhel", "centos", "rocky", "almalinux", "fedora") or "rhel" in id_like or "fedora" in id_like:
+        return "dnf"
+    if dist_id in ("sles", "opensuse", "opensuse-leap", "opensuse-tumbleweed") or "suse" in id_like:
+        return "zypper"
+    return "apt"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Stage: pip
-# ─────────────────────────────────────────────────────────────────────────────
-
-def stage_pip(check_mode: bool = False) -> None:
-    _print("\n" + "─" * 60, BOLD)
-    _print("Stage: Python packages (pip)", BOLD)
-    _print("─" * 60, BOLD)
-    for spec, desc in PIP_PACKAGES:
-        if check_mode:
-            info(f"  [check] would pip install: {spec}  — {desc}")
-            continue
-        info(f"pip install {spec}  — {desc}")
-        cmd = [sys.executable, "-m", "pip", "install", "--quiet",
-               "--break-system-packages", spec]
-        r = run_silent(cmd)
-        if r.returncode == 0:
-            ok(f"  {spec} installed")
+def _brew_install(pkgs):
+    brew_path = shutil.which("brew")
+    if not brew_path:
+        warn("Homebrew not found; skipping brew installs.")
+        return
+    SUDO_USER = os.environ.get("SUDO_USER", "")
+    for pkg in pkgs:
+        if os.getuid() == 0:
+            if not SUDO_USER:
+                warn(f"Running as root with no SUDO_USER — cannot brew install {pkg}; skipping.")
+                continue
+            run(["sudo", "-u", SUDO_USER, brew_path, "install", pkg])
         else:
-            warn(f"  {spec} failed: {r.stderr.strip()[:120]}")
+            run([brew_path, "install", pkg])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Stage: system packages
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── phase 1: system packages ────────────────────────────────────────────────
 
-def stage_system(check_mode: bool = False) -> None:
-    _print("\n" + "─" * 60, BOLD)
-    _print("Stage: system packages", BOLD)
-    _print("─" * 60, BOLD)
+def install_system_packages(os_type, args):
+    step("Phase 1 — System Packages")
+    if args.skip_apt:
+        warn("--skip-system set; skipping system package install.")
+        return
 
-    if IS_LINUX:
-        apt = which("apt-get") or which("apt")
-        if not apt:
-            warn("apt/apt-get not found — skipping system packages.")
-            return
-        env = os.environ.copy()
-        env["DEBIAN_FRONTEND"] = "noninteractive"
-        if not check_mode:
-            info("Running apt update ...")
-            subprocess.run([apt, "update"], env=env, timeout=120)
-        for pkg, desc in APT_PACKAGES:
-            if check_mode:
-                info(f"  [check] would apt install: {pkg}  — {desc}")
-                continue
-            info(f"apt install {pkg}  — {desc}")
-            r = subprocess.run(
-                [apt, "install", "-y", "-q", pkg,
-                 "-o", "Dpkg::Options::=--force-confold"],
-                env=env, timeout=180,
-            )
-            if r.returncode == 0:
-                ok(f"  {pkg} installed")
-            else:
-                warn(f"  {pkg} returned code {r.returncode}")
+    if os_type == "windows":
+        warn("Windows detected. Please install Python 3, git, openssl, and nmap manually.")
+        return
 
-    elif IS_MACOS:
-        brew = _brew_cmd()
-        if not brew:
-            warn("brew not found — install Homebrew first: https://brew.sh")
-            return
-        _brew_user = os.environ.get("SUDO_USER", "")
-        _brew_pfx  = ["sudo", "-u", _brew_user] if _brew_user and _brew_user != "root" else []
-        for pkg, desc in BREW_PACKAGES:
-            if check_mode:
-                info(f"  [check] would brew install: {pkg}  — {desc}")
-                continue
-            info(f"brew install {pkg}  — {desc}")
-            r = subprocess.run(_brew_pfx + [brew, "install", pkg], timeout=300)
-            if r.returncode == 0:
-                ok(f"  {pkg} installed")
-            else:
-                warn(f"  {pkg} brew install returned code {r.returncode}")
-    else:
-        warn(f"Unsupported platform: {SYSTEM}")
+    if os_type == "macos":
+        _brew_install(BREW_PKGS)
+        return
+
+    if os_type == "apt":
+        info("Running apt update + apt upgrade …")
+        run(["apt-get", "update", "-y"])
+        run(["apt-get", "upgrade", "-y"])
+        info("Installing APT packages …")
+        run(["apt-get", "install", "-y"] + APT_PKGS)
+
+    elif os_type == "dnf":
+        info("Installing DNF packages …")
+        run(["dnf", "install", "-y"] + DNF_PKGS)
+
+    elif os_type == "zypper":
+        info("Installing zypper packages …")
+        run(["zypper", "install", "-y"] + ZYPPER_PKGS)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Stage: service
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── phase 2: pip packages ───────────────────────────────────────────────────
 
-def _systemd_unit() -> str:
-    python_bin = which("python3") or sys.executable
-    return f"""[Unit]
-Description={DISPLAY} (port {PORT})
-After=network-online.target
-Wants=network-online.target
+def _pip_cmd():
+    """Return pip invocation as a list."""
+    if shutil.which("pip3"):
+        return ["pip3"]
+    if shutil.which("pip"):
+        return ["pip"]
+    return [sys.executable, "-m", "pip"]
+
+
+def install_pip_packages(args):
+    step("Phase 2 — Pip Packages")
+    if args.skip_pip:
+        warn("--skip-pip set; skipping.")
+        return
+    pip = _pip_cmd()
+    for pkg in PIP_PKGS:
+        info(f"pip install {pkg} …")
+        try:
+            run(pip + ["install", "--break-system-packages", pkg])
+        except RuntimeError as exc:
+            warn(f"pip install failed for {pkg}: {exc}")
+
+
+# ─── phase 3: go (none for Nexus) ────────────────────────────────────────────
+
+def install_go_tools(args):
+    step("Phase 3 — Go Tools")
+    if args.skip_go:
+        warn("--skip-go set; skipping.")
+        return
+    info("Nexus has no Go tool dependencies — phase skipped.")
+
+
+# ─── phase 4: git (none for Nexus) ───────────────────────────────────────────
+
+def install_git_tools(args):
+    step("Phase 4 — Git Tools")
+    if args.skip_git:
+        warn("--skip-git set; skipping.")
+        return
+    info("Nexus has no git-cloned tool dependencies — phase skipped.")
+
+
+# ─── service files ────────────────────────────────────────────────────────────
+
+def install_service_files(os_type):
+    step("Installing Service Files")
+
+    if os_type in ("apt", "dnf", "zypper"):
+        _install_systemd()
+
+    elif os_type == "macos":
+        _install_launchd()
+
+    elif os_type == "windows":
+        warn("Service file installation is not supported on Windows. "
+             "Run Nexus manually with: python app.py")
+
+
+def _install_systemd():
+    info(f"Writing systemd unit → {SYSTEMD_UNIT}")
+    unit_content = f"""\
+[Unit]
+Description=Nexus Hub Flask Application
+After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory={APP_DIR}
-ExecStart={python_bin} {MAIN_SCRIPT}
-Restart=always
-RestartSec=10
+ExecStart=/usr/bin/python3 {APP_DIR}/app.py
+Restart=on-failure
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
 Environment=PYTHONUNBUFFERED=1
@@ -217,21 +244,32 @@ Environment=PYTHONUNBUFFERED=1
 [Install]
 WantedBy=multi-user.target
 """
+    SYSTEMD_UNIT.parent.mkdir(parents=True, exist_ok=True)
+    SYSTEMD_UNIT.write_text(unit_content)
+    info("Reloading systemd daemon …")
+    try:
+        run(["systemctl", "daemon-reload"])
+        run(["systemctl", "enable", SERVICE_NAME])
+        info(f"Service {SERVICE_NAME} enabled. Start with: systemctl start {SERVICE_NAME}")
+    except RuntimeError as exc:
+        warn(f"systemctl command failed: {exc}")
 
 
-def _launchd_plist(label: str, python_bin: str) -> str:
-    log_dir = "/var/log/pr0t31n"
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
+def _install_launchd():
+    info(f"Writing launchd plist → {LAUNCHD_PLIST}")
+    python3 = shutil.which("python3") or "/usr/bin/python3"
+    plist_content = f"""\
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>{label}</string>
+    <string>com.pr0t31n.nexus</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{python_bin}</string>
-        <string>{MAIN_SCRIPT}</string>
+        <string>{python3}</string>
+        <string>{APP_DIR}/app.py</string>
     </array>
     <key>WorkingDirectory</key>
     <string>{APP_DIR}</string>
@@ -240,194 +278,166 @@ def _launchd_plist(label: str, python_bin: str) -> str:
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>{log_dir}/{APP_NAME}.log</string>
+    <string>/var/log/pr0t31n-nexus.log</string>
     <key>StandardErrorPath</key>
-    <string>{log_dir}/{APP_NAME}.err</string>
-    <key>ThrottleInterval</key>
-    <integer>10</integer>
+    <string>/var/log/pr0t31n-nexus.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
 </dict>
 </plist>
 """
+    LAUNCHD_PLIST.parent.mkdir(parents=True, exist_ok=True)
+    LAUNCHD_PLIST.write_text(plist_content)
+    try:
+        run(["launchctl", "load", "-w", str(LAUNCHD_PLIST)])
+        info(f"launchd service loaded. Stop with: launchctl unload {LAUNCHD_PLIST}")
+    except RuntimeError as exc:
+        warn(f"launchctl load failed: {exc}")
 
 
-def stage_service(check_mode: bool = False) -> None:
-    _print("\n" + "─" * 60, BOLD)
-    _print("Stage: boot service", BOLD)
-    _print("─" * 60, BOLD)
+# ─── check mode ──────────────────────────────────────────────────────────────
 
-    if check_mode:
-        if IS_LINUX:
-            info(f"  [check] would install /etc/systemd/system/pr0t31n-{APP_NAME}.service")
-        elif IS_MACOS:
-            info(f"  [check] would install /Library/LaunchDaemons/com.pr0t31n.{APP_NAME}.plist")
-        return
-
-    python_bin = which("python3") or sys.executable
-
-    if IS_LINUX:
-        service_name = f"pr0t31n-{APP_NAME}"
-        svc_path = Path(f"/etc/systemd/system/{service_name}.service")
-        try:
-            svc_path.write_text(_systemd_unit())
-            subprocess.run(["systemctl", "daemon-reload"], check=False)
-            subprocess.run(["systemctl", "enable", "--now", service_name], check=False)
-            ok(f"Systemd service  {service_name}  enabled and started  (port {PORT})")
-            ok(f"  Logs: journalctl -u {service_name} -f")
-        except PermissionError:
-            warn("Cannot write to /etc/systemd — run as root to install service.")
-
-    elif IS_MACOS:
-        label = f"com.pr0t31n.{APP_NAME}"
-        log_dir = Path("/var/log/pr0t31n")
-        plist_path = Path(f"/Library/LaunchDaemons/{label}.plist")
-        try:
-            log_dir.mkdir(parents=True, exist_ok=True)
-            # Unload any existing instance first
-            subprocess.run(["launchctl", "unload", str(plist_path)],
-                           capture_output=True, check=False)
-            plist_path.write_text(_launchd_plist(label, python_bin))
-            subprocess.run(["launchctl", "load", "-w", str(plist_path)], check=False)
-            ok(f"LaunchDaemon  {label}  loaded  (port {PORT})")
-            ok(f"  Stdout: {log_dir}/{APP_NAME}.log")
-            ok(f"  Stderr: {log_dir}/{APP_NAME}.err")
-        except PermissionError:
-            warn("Cannot write to /Library/LaunchDaemons — run as root.")
-    else:
-        warn(f"Service installation not supported on {SYSTEM}.")
-
-
-def stage_uninstall() -> None:
-    _print("\n" + "─" * 60, BOLD)
-    _print("Stage: uninstall service", BOLD)
-    _print("─" * 60, BOLD)
-
-    if IS_LINUX:
-        service_name = f"pr0t31n-{APP_NAME}"
-        svc_path = Path(f"/etc/systemd/system/{service_name}.service")
-        subprocess.run(["systemctl", "disable", "--now", service_name], check=False)
-        if svc_path.exists():
-            svc_path.unlink()
-            ok(f"Removed {svc_path}")
-        subprocess.run(["systemctl", "daemon-reload"], check=False)
-        ok(f"Service {service_name} removed.")
-
-    elif IS_MACOS:
-        label = f"com.pr0t31n.{APP_NAME}"
-        plist_path = Path(f"/Library/LaunchDaemons/{label}.plist")
-        subprocess.run(["launchctl", "unload", str(plist_path)],
-                       capture_output=True, check=False)
-        if plist_path.exists():
-            plist_path.unlink()
-            ok(f"Removed {plist_path}")
-        ok(f"LaunchDaemon {label} removed.")
-    else:
-        warn(f"Uninstall not supported on {SYSTEM}.")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Verification summary
-# ─────────────────────────────────────────────────────────────────────────────
-
-def print_summary() -> None:
-    _verify_python = [
-        ("flask",         "flask"),
-        ("flask-socketio","flask_socketio"),
-        ("eventlet",      "eventlet"),
-        ("requests",      "requests"),
-        ("werkzeug",      "werkzeug"),
+def run_check():
+    step("Check Mode — Dependency Status")
+    checks = [
+        ("nmap",        shutil.which("nmap")),
+        ("python3",     shutil.which("python3") or sys.executable),
+        ("git",         shutil.which("git")),
+        ("openssl",     shutil.which("openssl")),
     ]
-    _verify_bins = ["python3", "openssl"]
+    all_ok = True
+    for name, path in checks:
+        if path and Path(path).exists():
+            info(f"{name:22s} {G}OK{W}  ({path})")
+        else:
+            err(f"{name:22s} {R}MISSING{W}")
+            all_ok = False
 
-    _print("\n" + "─" * 60, BOLD)
-    _print("Post-install verification", BOLD)
-    _print("─" * 60, BOLD)
+    # Python modules
+    for mod in ("flask", "flask_socketio", "eventlet", "requests"):
+        ok = run_ok([sys.executable, "-c", f"import {mod}"])
+        if ok:
+            info(f"python:{mod:16s} {G}OK{W}")
+        else:
+            err(f"python:{mod:16s} {R}MISSING{W}")
+            all_ok = False
 
-    _print("\nSystem binaries:", BOLD)
-    for binary in _verify_bins:
-        path = which(binary)
-        status = f"{GREEN}✓{RESET}" if path else f"{YELLOW}✗{RESET}"
-        print(f"  {status}  {binary:<18} {path or '(not found)'}")
+    # Service file
+    os_type = detect_os()
+    if os_type in ("apt", "dnf", "zypper"):
+        svc_ok = SYSTEMD_UNIT.exists()
+        status = f"{G}OK{W}" if svc_ok else f"{Y}NOT INSTALLED{W}"
+        print(f"  {'systemd unit':22s} {status}")
+    elif os_type == "macos":
+        svc_ok = LAUNCHD_PLIST.exists()
+        status = f"{G}OK{W}" if svc_ok else f"{Y}NOT INSTALLED{W}"
+        print(f"  {'launchd plist':22s} {status}")
 
-    _print("\nPython packages:", BOLD)
-    for pkg_name, module in _verify_python:
-        r = run_silent([sys.executable, "-c", f"import {module}"])
-        found = r.returncode == 0
-        status = f"{GREEN}✓{RESET}" if found else f"{YELLOW}✗{RESET}"
-        print(f"  {status}  {pkg_name}")
-
-    _print("\nService status:", BOLD)
-    if IS_LINUX:
-        service_name = f"pr0t31n-{APP_NAME}"
-        r = run_silent(["systemctl", "is-active", service_name])
-        active = r.stdout.strip() == "active"
-        status = f"{GREEN}✓ active{RESET}" if active else f"{YELLOW}✗ {r.stdout.strip()}{RESET}"
-        print(f"  {status}  systemd/{service_name}")
-    elif IS_MACOS:
-        label = f"com.pr0t31n.{APP_NAME}"
-        plist_path = Path(f"/Library/LaunchDaemons/{label}.plist")
-        exists = plist_path.exists()
-        status = f"{GREEN}✓ installed{RESET}" if exists else f"{YELLOW}✗ not installed{RESET}"
-        print(f"  {status}  {label}")
-
-    _print(f"\nNexus is available at:", BOLD)
-    print(f"  https://localhost:{PORT}")
-    print(f"  Default credentials: admin / t3mpPas$w0rd  (must change on first login)")
     print()
+    if all_ok:
+        info(f"{G}All checks passed.{W}")
+    else:
+        warn(f"{Y}Some checks failed.{W}")
+    return all_ok
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CLI
-# ─────────────────────────────────────────────────────────────────────────────
+# ─── post-install summary ────────────────────────────────────────────────────
 
-def parse_args() -> argparse.Namespace:
+def post_install_summary(os_type):
+    step("Post-Install Verification Summary")
+    results = []
+
+    # Binaries
+    for tool in ("nmap", "python3", "git", "openssl"):
+        path = shutil.which(tool)
+        results.append((tool, bool(path), path or "missing"))
+
+    # Python modules
+    for mod in ("flask", "flask_socketio", "eventlet", "requests"):
+        ok = run_ok([sys.executable, "-c", f"import {mod}"])
+        results.append((f"python:{mod}", ok, "installed" if ok else "missing"))
+
+    # Service file
+    if os_type in ("apt", "dnf", "zypper"):
+        ok = SYSTEMD_UNIT.exists()
+        results.append(("systemd unit", ok, str(SYSTEMD_UNIT) if ok else "not installed"))
+    elif os_type == "macos":
+        ok = LAUNCHD_PLIST.exists()
+        results.append(("launchd plist", ok, str(LAUNCHD_PLIST) if ok else "not installed"))
+
+    pad = max(len(r[0]) for r in results) + 2
+    print()
+    for label, ok, detail in results:
+        status = f"{G}OK{W}" if ok else f"{R}FAIL{W}"
+        print(f"  {label:<{pad}} {status}  {detail}")
+
+    failed = [r for r in results if not r[1]]
+    print()
+    if not failed:
+        info(f"{G}Nexus installation complete and verified.{W}")
+        info(f"Nexus runs on port {APP_PORT}.")
+        if os_type in ("apt", "dnf", "zypper"):
+            info(f"Start with: {C}systemctl start {SERVICE_NAME}{W}")
+        elif os_type == "macos":
+            info(f"Service loaded via launchd at port {APP_PORT}.")
+    else:
+        warn(f"{Y}{len(failed)} item(s) need attention (see above).{W}")
+
+
+# ─── main ─────────────────────────────────────────────────────────────────────
+
+def parse_args():
     p = argparse.ArgumentParser(
-        description="Nexus installer — Python deps and boot service",
+        description=f"Installer for {APP_NAME}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
     )
-    p.add_argument("--check",         action="store_true",
-                   help="Dry run — show what would be installed")
-    p.add_argument("--skip-python",   action="store_true",
-                   help="Skip pip install stage")
-    p.add_argument("--skip-system",   action="store_true",
-                   help="Skip system package install stage")
-    p.add_argument("--skip-service",  action="store_true",
-                   help="Skip service registration")
-    p.add_argument("--uninstall",     action="store_true",
-                   help="Remove the boot service (does not remove pip packages)")
+    p.add_argument("--skip-apt",    "--skip-system", dest="skip_apt",
+                   action="store_true", help="Skip system package installation")
+    p.add_argument("--skip-pip",    action="store_true",
+                   help="Skip pip package installation")
+    p.add_argument("--skip-go",     action="store_true",
+                   help="Skip Go tools phase (no-op for Nexus)")
+    p.add_argument("--skip-git",    action="store_true",
+                   help="Skip git tools phase (no-op for Nexus)")
+    p.add_argument("--check",       action="store_true",
+                   help="Check dependencies without installing")
     return p.parse_args()
 
 
-def main() -> None:
-    _print("=" * 60, BOLD)
-    _print(f"  {DISPLAY} — Installer", BOLD)
-    _print(f"  Platform : {SYSTEM}", BOLD)
-    _print(f"  Port     : {PORT}", BOLD)
-    _print(f"  App dir  : {APP_DIR}", BOLD)
-    _print("=" * 60, BOLD)
-
+def main():
+    banner()
     args = parse_args()
+    os_type = detect_os()
+    info(f"Detected OS type: {os_type}")
 
-    if args.uninstall:
+    if args.check:
+        ok = run_check()
+        sys.exit(0 if ok else 1)
+
+    if os_type != "windows":
         require_root()
-        stage_uninstall()
-        return
 
-    require_root()
+    # Phase 1 — system packages
+    install_system_packages(os_type, args)
 
-    if not args.skip_system:
-        stage_system(check_mode=args.check)
+    # Phase 2 — pip
+    install_pip_packages(args)
 
-    if not args.skip_python:
-        stage_pip(check_mode=args.check)
+    # Phase 3 — Go (no-op)
+    install_go_tools(args)
 
-    if not args.skip_service:
-        stage_service(check_mode=args.check)
+    # Phase 4 — Git (no-op)
+    install_git_tools(args)
 
-    if not args.check:
-        print_summary()
-    else:
-        info("Dry run complete — no changes made.")
+    # Service files
+    if os_type != "windows":
+        install_service_files(os_type)
+
+    # Summary
+    post_install_summary(os_type)
 
 
 if __name__ == "__main__":
