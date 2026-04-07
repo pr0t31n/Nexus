@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 88 88" fill="none">
+  <!-- Central hub ring -->
+  <circle cx="44" cy="44" r="10" fill="currentColor" opacity=".2" stroke="currentColor" stroke-width="2"/>
+  <circle cx="44" cy="44" r="5"  fill="currentColor" opacity=".5"/>
+  <!-- Spokes to 7 nodes -->
+  <line x1="44" y1="34" x2="44" y2="14"  stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+  <line x1="44" y1="54" x2="44" y2="74"  stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+  <line x1="34" y1="44" x2="14" y2="44"  stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+  <line x1="54" y1="44" x2="74" y2="44"  stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+  <line x1="37" y1="37" x2="22" y2="22"  stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+  <line x1="51" y1="37" x2="66" y2="22"  stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+  <line x1="51" y1="51" x2="66" y2="66"  stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+  <!-- Outer nodes -->
+  <circle cx="44" cy="11" r="4" fill="currentColor" opacity=".75"/>
+  <circle cx="44" cy="77" r="4" fill="currentColor" opacity=".75"/>
+  <circle cx="11" cy="44" r="4" fill="currentColor" opacity=".75"/>
+  <circle cx="77" cy="44" r="4" fill="currentColor" opacity=".75"/>
+  <circle cx="19" cy="19" r="4" fill="currentColor" opacity=".75"/>
+  <circle cx="69" cy="19" r="4" fill="currentColor" opacity=".75"/>
+  <circle cx="69" cy="69" r="4" fill="currentColor" opacity=".75"/>
+</svg>
