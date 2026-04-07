@@ -34,13 +34,38 @@ var ICONS = {
   lock:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>',
 };
 
-/* ── Card rendering ─────────────────────────────────────────────────────────── */
+/* ── Service order with updated descriptions ────────────────────────────────── */
+var SVC_ORDER = [
+  {id: 'gauntlet',   name: 'Gauntlet',   icon: 'chip',   desc: 'Hardware'},
+  {id: 'spiderfoot', name: 'SpiderFoot', icon: 'spider', desc: 'OSINT Automation'},
+  {id: 'vantage',    name: 'Vantage',    icon: 'scope',  desc: 'Network & OSINT'},
+  {id: 'quiver',     name: 'Quiver',     icon: 'quiver', desc: 'Payload Manager'},
+  {id: 'spectre',    name: 'Spectre',    icon: 'wave',   desc: 'Wireless'},
+  {id: 'nessus',     name: 'Nessus',     icon: 'scan',   desc: 'Vulnerability Scanner'},
+  {id: 'mullig4n',   name: 'Mullig4n',   icon: 'lock',   desc: 'Net, OSINT & Reporting'},
+];
+
+/* ── HTML escaping ──────────────────────────────────────────────────────────── */
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;');
 }
 
+/* ── Detect IP-as-hostname (unresolved) ─────────────────────────────────────── */
+function isUnknownHost(hostname) {
+  return /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
+}
+
+/* ── Sort instances alphabetically by hostname ──────────────────────────────── */
+function sortInstances(items) {
+  return items.slice().sort(function(a, b) {
+    var ha = a.hostname.toLowerCase(), hb = b.hostname.toLowerCase();
+    return ha < hb ? -1 : ha > hb ? 1 : 0;
+  });
+}
+
+/* ── Status badge ───────────────────────────────────────────────────────────── */
 function statusBadge(scanning) {
   if (scanning === null || scanning === undefined) {
     return '<span class="status-badge status-na">N/A</span>';
@@ -50,9 +75,17 @@ function statusBadge(scanning) {
     : '<span class="status-badge status-idle">IDLE</span>';
 }
 
+/* ── Render a single instance card (collapsed by default) ───────────────────── */
 function renderCard(inst) {
-  var icon = ICONS[inst.icon] || ICONS.scope;
-  var scanRing = inst.scanning ? '<div class="card-scanning-ring"></div>' : '';
+  var unknown = isUnknownHost(inst.hostname);
+  var nameClass = 'card-display-name' + (unknown ? ' is-unknown' : '');
+  var displayName = unknown ? '-UNKNOWN-' : esc(inst.hostname);
+
+  var ipsHtml = (inst.ips || []).map(function(ip) {
+    return '<span class="card-ip">' + esc(ip) + '</span>';
+  }).join('');
+  var ipLabel = (inst.ips && inst.ips.length > 1) ? 'IPs' : 'IP';
+
   var extraLinks = '';
   if (inst.extra_urls && inst.extra_urls.length) {
     extraLinks = '<div class="card-extra-links">' +
@@ -60,44 +93,34 @@ function renderCard(inst) {
         return '<a href="' + esc(u) + '" target="_blank" rel="noopener" class="card-extra-link">' + esc(u) + '</a>';
       }).join('') + '</div>';
   }
-  var ipLabels = (inst.ips && inst.ips.length > 1) ? 'IPs' : 'IP';
-  var ipsHtml = (inst.ips || []).map(function(ip) {
-    return '<span class="card-ip">' + esc(ip) + '</span>';
-  }).join('');
 
-  return '<div class="instance-card" data-id="' + esc(inst.id) + '">' +
+  var scanRing = inst.scanning ? '<div class="card-scanning-ring"></div>' : '';
+
+  return '<div class="instance-card" data-id="' + esc(inst.id) + '" data-url="' + esc(inst.url) + '">' +
     scanRing +
-    '<div class="card-header">' +
-      '<div class="card-icon">' + icon + '</div>' +
-      '<div class="card-titles">' +
-        '<div class="card-name">' + esc(inst.name) + '</div>' +
-        '<div class="card-desc">' + esc(inst.desc) + '</div>' +
+    '<div class="card-collapsed-bar">' +
+      '<span class="card-chevron">&#x203A;</span>' +
+      '<span class="' + nameClass + '">' + displayName + '</span>' +
+      '<div class="card-collapsed-right">' +
+        statusBadge(inst.scanning) +
+        '<button class="card-visit-btn" title="Open ' + esc(inst.name) + '" data-url="' + esc(inst.url) + '">&#8599;</button>' +
       '</div>' +
-      statusBadge(inst.scanning) +
     '</div>' +
-    '<div class="card-body">' +
-      '<div class="card-row"><span class="card-label">HOSTNAME</span><span class="card-value">' + esc(inst.hostname) + '</span></div>' +
-      '<div class="card-row"><span class="card-label">' + ipLabels + '</span><div class="card-ips">' + ipsHtml + '</div></div>' +
-      '<div class="card-row"><span class="card-label">PORT</span><span class="card-value">' + esc(inst.port) + '</span></div>' +
-    '</div>' +
-    '<div class="card-footer">' +
-      '<a href="' + esc(inst.url) + '" target="_blank" rel="noopener" class="card-link">Open ' + esc(inst.name) + ' <span class="card-link-arrow">&#8599;</span></a>' +
-      extraLinks +
+    '<div class="card-expanded-content">' +
+      '<div class="card-body">' +
+        '<div class="card-row"><span class="card-label">HOSTNAME</span><span class="card-value">' + esc(inst.hostname) + '</span></div>' +
+        '<div class="card-row"><span class="card-label">' + ipLabel + '</span><div class="card-ips">' + ipsHtml + '</div></div>' +
+        '<div class="card-row"><span class="card-label">PORT</span><span class="card-value">' + esc(inst.port) + '</span></div>' +
+      '</div>' +
+      '<div class="card-footer">' +
+        '<a href="' + esc(inst.url) + '" target="_blank" rel="noopener" class="card-link">Open ' + esc(inst.name) + ' <span class="card-link-arrow">&#8599;</span></a>' +
+        extraLinks +
+      '</div>' +
     '</div>' +
   '</div>';
 }
 
-/* ── Service order (mirrors SERVICES in app.py) ─────────────────────────────── */
-var SVC_ORDER = [
-  {id: 'gauntlet',   name: 'Gauntlet',   desc: 'Device Security Assessment', icon: 'chip'},
-  {id: 'spiderfoot', name: 'SpiderFoot', desc: 'OSINT Automation',            icon: 'spider'},
-  {id: 'vantage',    name: 'Vantage',    desc: 'Recon Platform',              icon: 'scope'},
-  {id: 'quiver',     name: 'Quiver',     desc: 'Pentest Hardware Manager',    icon: 'quiver'},
-  {id: 'spectre',    name: 'Spectre',    desc: 'Wireless Assessment',         icon: 'wave'},
-  {id: 'nessus',     name: 'Nessus',     desc: 'Vulnerability Scanner',       icon: 'scan'},
-  {id: 'mullig4n',   name: 'Mullig4n',   desc: 'Security Management',         icon: 'lock'},
-];
-
+/* ── Render the full grid ───────────────────────────────────────────────────── */
 function renderGrid(instances) {
   if (!instances || !instances.length) {
     return '<div class="empty-state">' +
@@ -105,14 +128,22 @@ function renderGrid(instances) {
       '<div class="empty-state-msg">No instances found. Click <strong>Scan Now</strong> to search all interfaces.</div>' +
       '</div>';
   }
+
   var byId = {};
   instances.forEach(function(inst) {
     if (!byId[inst.id]) byId[inst.id] = [];
     byId[inst.id].push(inst);
   });
-  return SVC_ORDER.map(function(svc) {
+
+  // Sort service columns alphabetically by name
+  var sortedSvcs = SVC_ORDER.slice().sort(function(a, b) {
+    return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
+  });
+
+  var html = sortedSvcs.map(function(svc) {
     var items = byId[svc.id];
     if (!items || !items.length) return '';
+    var sorted = sortInstances(items);
     var icon = ICONS[svc.icon] || ICONS.scope;
     var header =
       '<div class="service-col-header">' +
@@ -121,29 +152,172 @@ function renderGrid(instances) {
           '<div class="service-col-name">' + esc(svc.name) + '</div>' +
           '<div class="service-col-desc">' + esc(svc.desc) + '</div>' +
         '</div>' +
-        '<span class="service-col-count">' + items.length + '</span>' +
+        '<span class="service-col-count">' + sorted.length + '</span>' +
       '</div>';
     return '<div class="service-col" data-svc="' + esc(svc.id) + '">' +
-      header + items.map(renderCard).join('') + '</div>';
+      header + sorted.map(renderCard).join('') + '</div>';
   }).join('');
+
+  return html || '<div class="empty-state">' +
+    '<div class="empty-state-icon">&#9685;</div>' +
+    '<div class="empty-state-msg">No matches. Clear the search to show all instances.</div>' +
+    '</div>';
+}
+
+/* ── Search suggestions (custom dropdown — substring match for IPs + hostnames) ─ */
+var _allSuggestions = [];
+
+function buildSuggestions(instances) {
+  var seen = {};
+  _allSuggestions = [];
+  instances.forEach(function(inst) {
+    [inst.name, inst.hostname].forEach(function(val) {
+      if (val && !seen[val] && !isUnknownHost(val)) {
+        seen[val] = true;
+        _allSuggestions.push(val);
+      }
+    });
+    (inst.ips || []).forEach(function(ip) {
+      if (ip && !seen[ip]) {
+        seen[ip] = true;
+        _allSuggestions.push(ip);
+      }
+    });
+  });
+}
+
+function showSuggestions(q) {
+  var box = document.getElementById('searchSuggestions');
+  if (!box) return;
+  if (!q) { box.innerHTML = ''; box.classList.remove('open'); return; }
+  var lq = q.toLowerCase();
+  var matches = _allSuggestions.filter(function(s) {
+    return s.toLowerCase().indexOf(lq) !== -1;
+  }).slice(0, 12);
+  if (!matches.length) { box.innerHTML = ''; box.classList.remove('open'); return; }
+  box.innerHTML = matches.map(function(s) {
+    return '<div class="search-suggestion" data-val="' + esc(s) + '">' + esc(s) + '</div>';
+  }).join('');
+  box.classList.add('open');
+}
+
+function hideSuggestions() {
+  var box = document.getElementById('searchSuggestions');
+  if (box) { box.innerHTML = ''; box.classList.remove('open'); }
+}
+
+/* ── Filter + re-render ─────────────────────────────────────────────────────── */
+function applyFilter(query) {
+  var grid = document.getElementById('instanceGrid');
+  if (!grid) return;
+  var q = (query || '').toLowerCase().trim();
+  var pool = window._allInstances || [];
+  var filtered = q ? pool.filter(function(inst) {
+    return inst.name.toLowerCase().indexOf(q) !== -1 ||
+           inst.hostname.toLowerCase().indexOf(q) !== -1 ||
+           inst.id.toLowerCase().indexOf(q) !== -1 ||
+           (inst.ips || []).some(function(ip) { return ip.indexOf(q) !== -1; });
+  }) : pool;
+  grid.innerHTML = renderGrid(filtered);
+}
+
+/* ── Full grid update (called by SocketIO and DOMContentLoaded) ─────────────── */
+function updateGrid(instances) {
+  window._allInstances = instances;
+  var count = document.getElementById('instanceCount');
+  var scanEl = document.getElementById('lastScan');
+  if (count) count.textContent = instances.length;
+  if (scanEl) scanEl.textContent = 'Last scan: ' + new Date().toLocaleTimeString('en-US', {hour12: false}) + ' local';
+  buildSuggestions(instances);
+  var searchInput = document.getElementById('searchInput');
+  applyFilter(searchInput ? searchInput.value : '');
+}
+
+/* ── Event delegation: expand/collapse + quick-visit ───────────────────────── */
+function initGrid() {
+  var grid = document.getElementById('instanceGrid');
+  if (!grid) return;
+
+  grid.addEventListener('click', function(e) {
+    // Quick-visit button — open URL, don't expand
+    var visitBtn = e.target.closest('.card-visit-btn');
+    if (visitBtn) {
+      e.stopPropagation();
+      var url = visitBtn.getAttribute('data-url');
+      if (url) window.open(url, '_blank', 'noopener');
+      return;
+    }
+
+    // Expand/collapse on bar click
+    var bar = e.target.closest('.card-collapsed-bar');
+    if (!bar) return;
+    var card = bar.closest('.instance-card');
+    if (!card) return;
+    var col = card.closest('.service-col');
+    var wasExpanded = card.classList.contains('expanded');
+
+    // Collapse all cards in this column
+    if (col) {
+      col.querySelectorAll('.instance-card.expanded').forEach(function(c) {
+        c.classList.remove('expanded');
+      });
+    }
+
+    // Expand clicked card if it was collapsed
+    if (!wasExpanded) {
+      card.classList.add('expanded');
+    }
+  });
+
+  // Search input — live filter + custom suggestions
+  var searchInput = document.getElementById('searchInput');
+  var sugBox = document.getElementById('searchSuggestions');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      showSuggestions(this.value);
+      applyFilter(this.value);
+    });
+    searchInput.addEventListener('blur', function() {
+      // Delay so a suggestion click fires before the box is hidden
+      setTimeout(hideSuggestions, 150);
+    });
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') { hideSuggestions(); this.blur(); }
+    });
+  }
+  if (sugBox) {
+    sugBox.addEventListener('click', function(e) {
+      var item = e.target.closest('.search-suggestion');
+      if (!item) return;
+      var val = item.getAttribute('data-val');
+      if (searchInput) searchInput.value = val;
+      hideSuggestions();
+      applyFilter(val);
+    });
+  }
 }
 
 /* ── SocketIO live updates ──────────────────────────────────────────────────── */
 (function() {
   if (typeof io === 'undefined') return;
-
   var socket = io({ transports: ['websocket', 'polling'] });
   window._socket = socket;
 
   socket.on('instances_update', function(instances) {
-    var grid = document.getElementById('instanceGrid');
-    var count = document.getElementById('instanceCount');
-    var scanEl = document.getElementById('lastScan');
-    if (!grid) return;
-    if (count) count.textContent = instances.length;
-    if (scanEl) scanEl.textContent = 'Last scan: ' + new Date().toLocaleTimeString('en-US', {hour12:false}) + ' local';
-    grid.innerHTML = renderGrid(instances);
+    updateGrid(instances);
     var btn = document.getElementById('scanBtn');
     if (btn) { btn.disabled = false; btn.textContent = 'Scan Now'; }
   });
 })();
+
+/* ── Bootstrap on page load ─────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+  var initial = window._initialInstances;
+  if (initial && initial.length) {
+    window._allInstances = initial;
+    buildSuggestions(initial);
+    var grid = document.getElementById('instanceGrid');
+    if (grid) grid.innerHTML = renderGrid(initial);
+  }
+  initGrid();
+});
