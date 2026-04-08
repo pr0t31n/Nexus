@@ -6,7 +6,7 @@ instances on every local network interface. Runs on port 5400.
 """
 from __future__ import annotations
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 import ipaddress
 import json
@@ -133,6 +133,8 @@ SERVICES = [
      "desc": "Vulnerability Scanner",       "status_api": False, "icon": "scan"},
     {"id": "mullig4n",  "name": "Mullig4n",    "port": 8443,  "proto": "https",
      "desc": "Security Management",         "status_api": False, "icon": "lock"},
+    {"id": "crucible",  "name": "Crucible",    "port": 5500,  "proto": "https",
+     "desc": "Web & API Assessment",        "status_api": True,  "icon": "crucible"},
 ]
 
 # ---------------------------------------------------------------------------

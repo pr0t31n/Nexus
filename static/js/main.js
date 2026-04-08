@@ -31,7 +31,8 @@ var ICONS = {
   quiver: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="12" y1="12" x2="12" y2="3"/><polyline points="10,5 12,3 14,5"/><path d="M9 12 C8.5 16 8.5 19 9 22 L15 22 C15.5 19 15.5 16 15 12 Z"/><ellipse cx="12" cy="12" rx="3.5" ry="1.2"/></svg>',
   wave:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 12 Q4 8 7 12 T13 12 T19 12 T25 12"/><path d="M4 17 Q6 14 8 17"/><path d="M4 7 Q6 4 8 7"/><path d="M16 17 Q18 14 20 17"/><path d="M16 7 Q18 4 20 7"/></svg>',
   scan:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="12" cy="15" r="2"/><line x1="6" y1="6" x2="8" y2="6"/></svg>',
-  lock:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>',
+  lock:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>',
+  crucible: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4 H19"/><path d="M7 4 L9 17 Q12 21 15 17 L17 4"/><path d="M10 21 Q11 19 12 21 Q13 19 14 21"/></svg>',
 };
 
 /* ── Service order with updated descriptions ────────────────────────────────── */
@@ -42,7 +43,8 @@ var SVC_ORDER = [
   {id: 'quiver',     name: 'Quiver',     icon: 'quiver', desc: 'Payload Manager'},
   {id: 'spectre',    name: 'Spectre',    icon: 'wave',   desc: 'Wireless'},
   {id: 'nessus',     name: 'Nessus',     icon: 'scan',   desc: 'Vulnerability Scanner'},
-  {id: 'mullig4n',   name: 'Mullig4n',   icon: 'lock',   desc: 'Net, OSINT & Reporting'},
+  {id: 'mullig4n',   name: 'Mullig4n',   icon: 'lock',     desc: 'Net, OSINT & Reporting'},
+  {id: 'crucible',   name: 'Crucible',   icon: 'crucible', desc: 'Web & API Assessment'},
 ];
 
 /* ── HTML escaping ──────────────────────────────────────────────────────────── */
