@@ -33,7 +33,7 @@ https://localhost:5400
 | Quiver      | 5200 | HTTPS    | — (no scan concept) |
 | Spectre     | 5300 | HTTPS    | ✓ (wireless assessment) |
 | Nessus      | 8834 | HTTPS    | — |
-| Mullig4n    | 8443 | HTTPS    | — |
+| HiTMan    | 8443 | HTTPS    | — |
 
 Scan status is retrieved by querying `GET /api/nexus-status` on apps that support it. The endpoint returns `{"scanning": true|false}` and is intentionally unauthenticated so Nexus can poll without credentials.
 

@@ -6,7 +6,7 @@ instances on every local network interface. Runs on port 5400.
 """
 from __future__ import annotations
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 import ipaddress
 import json
@@ -33,7 +33,7 @@ app.config["SECRET_KEY"]               = _auth.load_secret_key()
 app.config["SESSION_COOKIE_SECURE"]    = False  # self-signed cert; HTTPS enforced server-side
 app.config["SESSION_COOKIE_HTTPONLY"]  = True
 app.config["SESSION_COOKIE_SAMESITE"]  = "Lax"
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
 _auth.init_auth()
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
@@ -131,7 +131,7 @@ SERVICES = [
      "desc": "Wireless Assessment",         "status_api": True,  "icon": "wave"},
     {"id": "nessus",    "name": "Nessus",      "port": 8834,  "proto": "https",
      "desc": "Vulnerability Scanner",       "status_api": False, "icon": "scan"},
-    {"id": "mullig4n",  "name": "Mullig4n",    "port": 8443,  "proto": "https",
+    {"id": "hitman",  "name": "HiTMan",    "port": 8443,  "proto": "https",
      "desc": "Security Management",         "status_api": False, "icon": "lock"},
     {"id": "crucible",  "name": "Crucible",    "port": 5500,  "proto": "https",
      "desc": "Web & API Assessment",        "status_api": True,  "icon": "crucible"},
@@ -427,6 +427,14 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/api/session_ping", methods=["POST"])
+def session_ping():
+    if not session.get("authenticated"):
+        return jsonify({"ok": False}), 401
+    session.modified = True
+    return jsonify({"ok": True})
 
 
 @app.route("/auth/change-password", methods=["GET", "POST"])

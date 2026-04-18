@@ -1,18 +1,205 @@
 /* Nexus — Central Hub — main.js */
 'use strict';
 
-/* ── Theme ─────────────────────────────────────────────────────────────────── */
-function toggleTheme() {
-  var html = document.documentElement;
-  var next = html.getAttribute('data-mode') === 'dark' ? 'light' : 'dark';
-  html.setAttribute('data-mode', next);
-  try { localStorage.setItem('nexus-mode', next); } catch(e) {}
+/* ── Theme / Palette ────────────────────────────────────────────────────────── */
+var _KEY_PALETTE = 'nexus-palette';
+var _KEY_MODE    = 'nexus-mode';
+
+var PALETTES_META = [
+  // Professional
+  { id: 'tuxedo',      label: 'Tuxedo',       d: ['#0a0a0a','#e0e0e0'],   l: ['#ffffff','#111111'] },
+  { id: 'meridian',    label: 'Meridian',     d: ['#0e1628','#4a88cc'],   l: ['#f6f9ff','#1a4a8c'] },
+  { id: 'alabaster',   label: 'Alabaster',    d: ['#121416','#9caab8'],   l: ['#faf8f5','#2c3038'] },
+  { id: 'leadership',  label: 'Leadership',   d: ['#0b1428','#f5c842'],   l: ['#fdf8f0','#c8940a'] },
+  { id: 'blueprint',   label: 'Blueprint',    d: ['#061830','#5090e0'],   l: ['#f0f5ff','#1a4898'] },
+  { id: 'resume',      label: 'Resume',       d: ['#141008','#c8a860'],   l: ['#faf6ee','#1c2840'] },
+  // Casual
+  { id: 'foundry',     label: 'Foundry',      d: ['#0d0d0d','#f0a500'],   l: ['#f5f0e8','#c88000'] },
+  { id: 'forge',       label: 'Forge',        d: ['#0a0804','#c8921f'],   l: ['#ede0c4','#8b5e10'] },
+  { id: 'frigid',      label: 'Frigid',       d: ['#040e14','#30b0cc'],   l: ['#e4f0f8','#0a6888'] },
+  { id: 'bloom',       label: 'Bloom',        d: ['#120e18','#c490c8'],   l: ['#faf6ff','#9060a8'] },
+  { id: 'prism',       label: 'Prism',        d: ['#0c0f2e','#c084fc'],   l: ['#c4b5fd','#7c3aed'] },
+  { id: 'ember',       label: 'Ember',        d: ['#140206','#e83020'],   l: ['#fff4ee','#b82010'] },
+  { id: 'oldglory',    label: 'Old Glory',    d: ['#010410','#f03050'],   l: ['#e0e4f0','#021a5c'] },
+  { id: 'alchemist',   label: 'Alchemist',    d: ['#020606','#50c8a0'],   l: ['#daf0ec','#0a2820'] },
+  // Nerdy
+  { id: 'coruscant',   label: 'Coruscant',    d: ['#050007','#ff2040'],   l: ['#f5f8fe','#1a4a8c'] },
+  { id: 'retro',       label: 'Retro',        d: ['#020a02','#33ff33'],   l: ['#0d0700','#ffaa00'] },
+  { id: 'jarvis',      label: 'JARVIS',       d: ['#020c1b','#00d0ff'],   l: ['#d0e8f8','#0068c8'] },
+  { id: 'hal9000',     label: 'HAL-9000',     d: ['#040202','#aa1800'],   l: ['#f8f5f2','#aa1800'] },
+  { id: 'neuromancer', label: 'Neuromancer',  d: ['#06030c','#d010b8'],   l: ['#faf0ff','#b010a0'] },
+  { id: 'deepspace',   label: 'Deep Space',   d: ['#030610','#9070f0'],   l: ['#f0f4ff','#5040c0'] },
+  { id: 'bladerunner', label: 'Blade Runner', d: ['#0a0810','#ff8c00'],   l: ['#f4f0e8','#c06800'] },
+  { id: 'synthwave',   label: 'Synthwave',    d: ['#0d0018','#ff0880'],   l: ['#fce8ff','#c00060'] },
+  // Natural
+  { id: 'espresso',    label: 'Espresso',     d: ['#130c06','#c07030'],   l: ['#fef8ee','#8b4a10'] },
+  { id: 'terracotta',  label: 'Terracotta',   d: ['#180806','#d45828'],   l: ['#faf2e8','#b04020'] },
+  { id: 'sage',        label: 'Sage',         d: ['#060c06','#78b860'],   l: ['#f4f9f0','#2a6830'] },
+  { id: 'blush',       label: 'Blush',        d: ['#160608','#d06878'],   l: ['#fdf4f5','#8a2848'] },
+];
+var NEXUS_PALETTES = PALETTES_META.map(function(p) { return p.id; });
+
+var PALETTE_CATEGORIES = [
+  { id: 'professional', label: 'Professional', palettes: ['tuxedo','meridian','alabaster','leadership','blueprint','resume'] },
+  { id: 'casual',       label: 'Casual',       palettes: ['foundry','forge','frigid','bloom','prism','ember','oldglory','alchemist'] },
+  { id: 'nerdy',        label: 'Nerdy',        palettes: ['coruscant','retro','jarvis','hal9000','neuromancer','deepspace','bladerunner','synthwave'] },
+  { id: 'natural',      label: 'Natural',      palettes: ['espresso','terracotta','sage','blush'] },
+];
+
+function _nxLoadPref(key)      { try { return localStorage.getItem(key); } catch(e) { return null; } }
+function _nxSavePref(key, val) { try { localStorage.setItem(key, val);   } catch(e) {} }
+
+function _nxSwatchHtml(colors) {
+  return colors.map(function(c) {
+    return '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;' +
+           'background:' + c + ';border:1px solid rgba(128,128,128,.3);flex-shrink:0"></span>';
+  }).join('');
 }
+
+function applyTheme(palette, mode) {
+  var html = document.documentElement;
+  html.setAttribute('data-palette', palette);
+  html.setAttribute('data-mode',    mode);
+
+  var themeChk = document.getElementById('themeToggle');
+  if (themeChk && themeChk.type === 'checkbox') themeChk.checked = (mode === 'dark');
+
+  var sel = document.getElementById('paletteSelect');
+  if (sel) sel.value = palette;
+
+  _nxUpdatePickerUI(palette, mode);
+  _nxSavePref(_KEY_PALETTE, palette);
+  _nxSavePref(_KEY_MODE,    mode);
+}
+
+function _nxUpdatePickerUI(palette, mode) {
+  var label    = document.getElementById('palettePickerLabel');
+  var swatches = document.getElementById('palettePickerSwatches');
+  if (!label || !swatches) return;
+  var meta = PALETTES_META.filter(function(p) { return p.id === palette; })[0] || PALETTES_META[0];
+  var cols = mode === 'dark' ? meta.d : meta.l;
+  label.textContent  = meta.label;
+  swatches.innerHTML = _nxSwatchHtml(cols);
+}
+
+function _nxBuildDropdown() {
+  var ul = document.getElementById('palettePickerDropdown');
+  if (!ul || ul.children.length) return;
+  var mode = document.documentElement.getAttribute('data-mode') || 'dark';
+
+  ul.innerHTML = PALETTE_CATEGORIES.map(function(cat) {
+    var itemsHtml = cat.palettes.map(function(pid) {
+      var meta = PALETTES_META.filter(function(p) { return p.id === pid; })[0];
+      if (!meta) return '';
+      var cols = mode === 'dark' ? meta.d : meta.l;
+      return '<li role="option" data-palette="' + meta.id + '"' +
+             ' style="display:flex;align-items:center;gap:.45rem;padding:.32rem .6rem;' +
+             'cursor:pointer;white-space:nowrap;font-size:.75rem">' +
+             _nxSwatchHtml(cols) +
+             '<span>' + meta.label + '</span></li>';
+    }).join('');
+    return '<li class="palette-cat-item" data-cat="' + cat.id + '">' +
+           '<div class="palette-cat-header" role="presentation">' +
+           '<span>' + cat.label + '</span>' +
+           '<span class="cat-arrow">&#x25b8;</span></div>' +
+           '<ul class="palette-cat-sub" role="group" aria-label="' + cat.label + ' themes">' +
+           itemsHtml + '</ul></li>';
+  }).join('');
+
+  ul.querySelectorAll('li[data-palette]').forEach(function(li) {
+    li.addEventListener('click', function(e) {
+      e.stopPropagation();
+      applyTheme(li.dataset.palette, document.documentElement.getAttribute('data-mode') || 'dark');
+      _nxClosePicker();
+    });
+  });
+
+  ul.querySelectorAll('.palette-cat-header').forEach(function(header) {
+    header.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var item   = header.closest('.palette-cat-item');
+      var isOpen = item.classList.contains('open');
+      ul.querySelectorAll('.palette-cat-item.open').forEach(function(i) { i.classList.remove('open'); });
+      if (!isOpen) item.classList.add('open');
+    });
+  });
+}
+
+function _nxRefreshSwatches(mode) {
+  var ul = document.getElementById('palettePickerDropdown');
+  if (!ul) return;
+  ul.querySelectorAll('li[data-palette]').forEach(function(li) {
+    var meta = PALETTES_META.filter(function(p) { return p.id === li.dataset.palette; })[0];
+    if (!meta) return;
+    var cols = mode === 'dark' ? meta.d : meta.l;
+    var spans = li.querySelectorAll('span[style*="border-radius:50%"]');
+    spans.forEach(function(s, i) { if (cols[i]) s.style.background = cols[i]; });
+  });
+}
+
+function _nxOpenPicker() {
+  var picker = document.getElementById('palettePicker');
+  var dd     = document.getElementById('palettePickerDropdown');
+  if (!picker || !dd) return;
+  _nxBuildDropdown();
+  _nxRefreshSwatches(document.documentElement.getAttribute('data-mode') || 'dark');
+  dd.classList.remove('drop-up');
+  picker.setAttribute('aria-expanded', 'true');
+  dd.style.display = 'block';
+  var rect = dd.getBoundingClientRect();
+  if (rect.bottom > (window.innerHeight || document.documentElement.clientHeight)) {
+    dd.classList.add('drop-up');
+  }
+}
+
+function _nxClosePicker() {
+  var picker = document.getElementById('palettePicker');
+  var dd     = document.getElementById('palettePickerDropdown');
+  if (picker) picker.setAttribute('aria-expanded', 'false');
+  if (dd) {
+    dd.style.display = 'none';
+    dd.classList.remove('drop-up');
+    dd.querySelectorAll('.palette-cat-item.open').forEach(function(i) { i.classList.remove('open'); });
+  }
+}
+
+function _nxTogglePicker() {
+  var dd = document.getElementById('palettePickerDropdown');
+  if (!dd) return;
+  dd.style.display === 'block' ? _nxClosePicker() : _nxOpenPicker();
+}
+
+(function _nxInitTheme() {
+  var savedPalette = _nxLoadPref(_KEY_PALETTE);
+  var savedMode    = _nxLoadPref(_KEY_MODE);
+  var palette = NEXUS_PALETTES.indexOf(savedPalette) !== -1 ? savedPalette : 'resume';
+  var mode    = (savedMode === 'light' || savedMode === 'dark') ? savedMode : 'light';
+  applyTheme(palette, mode);
+})();
+
+document.addEventListener('change', function(e) {
+  if (e.target.id === 'themeToggle') {
+    var palette = document.documentElement.getAttribute('data-palette') || 'resume';
+    var newMode = e.target.checked ? 'dark' : 'light';
+    applyTheme(palette, newMode);
+    _nxRefreshSwatches(newMode);
+  }
+});
+
+document.addEventListener('click', function(e) {
+  if (e.target.closest('#palettePickerDropdown')) return;
+  if (e.target.closest('#palettePicker')) { _nxTogglePicker(); return; }
+  _nxClosePicker();
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') _nxClosePicker();
+});
 
 /* ── Scan trigger ───────────────────────────────────────────────────────────── */
 function triggerScan() {
   var btn = document.getElementById('scanBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Scanning\u2026'; }
   if (window._socket) {
     window._socket.emit('request_scan');
   } else {
@@ -43,7 +230,7 @@ var SVC_ORDER = [
   {id: 'quiver',     name: 'Quiver',     icon: 'quiver', desc: 'Payload Manager'},
   {id: 'spectre',    name: 'Spectre',    icon: 'wave',   desc: 'Wireless'},
   {id: 'nessus',     name: 'Nessus',     icon: 'scan',   desc: 'Vulnerability Scanner'},
-  {id: 'mullig4n',   name: 'Mullig4n',   icon: 'lock',     desc: 'Net, OSINT & Reporting'},
+  {id: 'hitman',   name: 'HiTMan',   icon: 'lock',     desc: 'Net, OSINT & Reporting'},
   {id: 'crucible',   name: 'Crucible',   icon: 'crucible', desc: 'Web & API Assessment'},
 ];
 
@@ -137,7 +324,6 @@ function renderGrid(instances) {
     byId[inst.id].push(inst);
   });
 
-  // Sort service columns alphabetically by name
   var sortedSvcs = SVC_ORDER.slice().sort(function(a, b) {
     return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1;
   });
@@ -241,7 +427,6 @@ function initGrid() {
   if (!grid) return;
 
   grid.addEventListener('click', function(e) {
-    // Quick-visit button — open URL, don't expand
     var visitBtn = e.target.closest('.card-visit-btn');
     if (visitBtn) {
       e.stopPropagation();
@@ -250,7 +435,6 @@ function initGrid() {
       return;
     }
 
-    // Expand/collapse on bar click
     var bar = e.target.closest('.card-collapsed-bar');
     if (!bar) return;
     var card = bar.closest('.instance-card');
@@ -258,20 +442,17 @@ function initGrid() {
     var col = card.closest('.service-col');
     var wasExpanded = card.classList.contains('expanded');
 
-    // Collapse all cards in this column
     if (col) {
       col.querySelectorAll('.instance-card.expanded').forEach(function(c) {
         c.classList.remove('expanded');
       });
     }
 
-    // Expand clicked card if it was collapsed
     if (!wasExpanded) {
       card.classList.add('expanded');
     }
   });
 
-  // Search input — live filter + custom suggestions
   var searchInput = document.getElementById('searchInput');
   var sugBox = document.getElementById('searchSuggestions');
   if (searchInput) {
@@ -280,7 +461,6 @@ function initGrid() {
       applyFilter(this.value);
     });
     searchInput.addEventListener('blur', function() {
-      // Delay so a suggestion click fires before the box is hidden
       setTimeout(hideSuggestions, 150);
     });
     searchInput.addEventListener('keydown', function(e) {
