@@ -6,19 +6,35 @@ instances on every local network interface. Runs on port 5400.
 """
 from __future__ import annotations
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 import ipaddress
 import json
 import os
 import socket
 import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
+
+# Maps wrapper tool name → install script path
+_NEXUS_TOOL_INSTALL_MAP: dict[str, str] = {
+    "crucible":     "/opt/pr0t31n/Crucible/install.py",
+    "vantage":      "/opt/pr0t31n/Vantage/install.py",
+    "spectre":      "/opt/pr0t31n/Spectre/install.py",
+    "gauntlet":     "/opt/pr0t31n/Gauntlet/install.py",
+    "bastion":      "/opt/pr0t31n/Bastion/install.py",
+    "fracture":     "/opt/pr0t31n/Fracture/install.py",
+    "siphon":       "/opt/pr0t31n/Siphon/install.py",
+    "scattershot3": "/opt/pr0t31n/Scattershot3/install.py",
+    "osift":        "/opt/pr0t31n/OSift/install.py",
+    "gearbox":      "/opt/pr0t31n/Gearbox/install.py",
+    "arbiter":      "/opt/pr0t31n/Arbiter/install.py",
+}
 
 import requests
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -399,6 +415,48 @@ def api_instances():
 def api_scan():
     threading.Thread(target=_do_scan, daemon=True).start()
     return jsonify({"status": "scan started"})
+
+
+@app.route("/api/nexus-status")
+def api_nexus_status():
+    """Standard pr0t31n health probe endpoint."""
+    return jsonify({
+        "tool":    "nexus",
+        "version": VERSION,
+        "scanning": False,
+    })
+
+
+@app.route("/api/install-tool", methods=["POST"])
+def api_install_tool():
+    """
+    Trigger a background installation of a pr0t31n tool on this host.
+    Called by Arbiter's execute-recommendation flow when the required tool
+    is missing but Nexus (Arsenal) is available.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    tool = str(data.get("tool", "")).strip().lower()
+    if not tool or tool not in _NEXUS_TOOL_INSTALL_MAP:
+        valid = sorted(_NEXUS_TOOL_INSTALL_MAP.keys())
+        return jsonify({"ok": False, "error": f"Unknown tool '{tool}'. Valid: {valid}"}), 400
+
+    script = _NEXUS_TOOL_INSTALL_MAP[tool]
+    if not Path(script).exists():
+        return jsonify({"ok": False, "error": f"Install script not found: {script}"}), 404
+
+    def _run():
+        try:
+            subprocess.run(
+                [sys.executable, script],
+                timeout=300, check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True, name=f"nexus-install-{tool}").start()
+    return jsonify({"ok": True, "status": "install_started", "tool": tool})
+
 
 # ---------------------------------------------------------------------------
 # Auth routes
