@@ -6,7 +6,7 @@ instances on every local network interface. Runs on port 5400.
 """
 from __future__ import annotations
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 
 import ipaddress
 import json
@@ -46,6 +46,7 @@ import _auth
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.config["SECRET_KEY"]               = _auth.load_secret_key()
+app.config["SESSION_COOKIE_NAME"]      = "nexus_session"
 app.config["SESSION_COOKIE_SECURE"]    = False  # self-signed cert; HTTPS enforced server-side
 app.config["SESSION_COOKIE_HTTPONLY"]  = True
 app.config["SESSION_COOKIE_SAMESITE"]  = "Lax"
