@@ -114,13 +114,37 @@ def detect_os():
     return "apt"
 
 
+def _pip_installed(pkg_spec):
+    import importlib.util
+    name = pkg_spec.split(">=")[0].split("==")[0].split("[")[0].split("<")[0].strip()
+    _IMPORT_MAP = {
+        "flask-socketio": "flask_socketio", "python-engineio": "engineio",
+        "python-socketio": "socketio",
+    }
+    mod = _IMPORT_MAP.get(name, name.replace("-", "_"))
+    return importlib.util.find_spec(mod) is not None
+
+
+def _brew_installed_set():
+    try:
+        r = subprocess.run(["brew", "list", "--formula", "-1"],
+                           capture_output=True, text=True, check=True)
+        return set(r.stdout.strip().splitlines())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return set()
+
+
 def _brew_install(pkgs):
     brew_path = shutil.which("brew")
     if not brew_path:
         warn("Homebrew not found; skipping brew installs.")
         return
+    installed = _brew_installed_set()
     SUDO_USER = os.environ.get("SUDO_USER", "")
     for pkg in pkgs:
+        if pkg in installed:
+            info(f"  ✓ {pkg} already installed")
+            continue
         if os.getuid() == 0:
             if not SUDO_USER:
                 warn(f"Running as root with no SUDO_USER — cannot brew install {pkg}; skipping.")
@@ -180,6 +204,9 @@ def install_pip_packages(args):
         return
     pip = _pip_cmd()
     for pkg in PIP_PKGS:
+        if _pip_installed(pkg):
+            info(f"  ✓ {pkg} already installed")
+            continue
         info(f"pip install {pkg} …")
         try:
             run(pip + ["install", "--break-system-packages", pkg])
