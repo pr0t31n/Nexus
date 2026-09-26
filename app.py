@@ -6,7 +6,7 @@ instances on every local network interface. Runs on port 5400.
 """
 from __future__ import annotations
 
-VERSION = "1.2.3"
+VERSION = Path(__file__).resolve().parent.joinpath("VERSION").read_text().strip()
 
 import ipaddress
 import json
