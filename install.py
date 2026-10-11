@@ -59,6 +59,7 @@ def banner():
 
 def info(msg):  print(f"{G}[+]{W} {msg}")
 def warn(msg):  print(f"{Y}[!]{W} {msg}")
+def note(msg):  print(f"{Y}[i]{W} {msg}")
 def err(msg):   print(f"{R}[✗]{W} {msg}")
 def step(msg):  print(f"\n{B}━━ {msg} ━━{W}")
 
@@ -137,7 +138,7 @@ def _brew_installed_set():
 def _brew_install(pkgs):
     brew_path = shutil.which("brew")
     if not brew_path:
-        warn("Homebrew not found; skipping brew installs.")
+        note("Homebrew not found; skipping brew installs.")
         return
     installed = _brew_installed_set()
     SUDO_USER = os.environ.get("SUDO_USER", "")
@@ -147,7 +148,7 @@ def _brew_install(pkgs):
             continue
         if os.getuid() == 0:
             if not SUDO_USER:
-                warn(f"Running as root with no SUDO_USER — cannot brew install {pkg}; skipping.")
+                note(f"Running as root with no SUDO_USER — cannot brew install {pkg}; skipping.")
                 continue
             run(["sudo", "-u", SUDO_USER, brew_path, "install", pkg])
         else:
@@ -159,7 +160,7 @@ def _brew_install(pkgs):
 def install_system_packages(os_type, args):
     step("Phase 1 — System Packages")
     if args.skip_apt:
-        warn("--skip-system set; skipping system package install.")
+        note("--skip-system set; skipping system package install.")
         return
 
     if os_type == "windows":
@@ -200,7 +201,7 @@ def _pip_cmd():
 def install_pip_packages(args):
     step("Phase 2 — Pip Packages")
     if args.skip_pip:
-        warn("--skip-pip set; skipping.")
+        note("--skip-pip set; skipping.")
         return
     pip = _pip_cmd()
     for pkg in PIP_PKGS:
@@ -219,7 +220,7 @@ def install_pip_packages(args):
 def install_go_tools(args):
     step("Phase 3 — Go Tools")
     if args.skip_go:
-        warn("--skip-go set; skipping.")
+        note("--skip-go set; skipping.")
         return
     info("Nexus has no Go tool dependencies — phase skipped.")
 
@@ -229,7 +230,7 @@ def install_go_tools(args):
 def install_git_tools(args):
     step("Phase 4 — Git Tools")
     if args.skip_git:
-        warn("--skip-git set; skipping.")
+        note("--skip-git set; skipping.")
         return
     info("Nexus has no git-cloned tool dependencies — phase skipped.")
 
@@ -246,7 +247,7 @@ def install_service_files(os_type):
         _install_launchd()
 
     elif os_type == "windows":
-        warn("Service file installation is not supported on Windows. "
+        note("Service file installation is not supported on Windows. "
              "Run Nexus manually with: python app.py")
 
 
