@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nexus v2.2 — Network Fabric System
+Nexus v2.3 — Network Fabric System
 Fleet management hub for the pr0t31n toolkit. Discovers and manages
 tool instances across any network topology — VPN, overlay, cloud, or LAN.
 Runs on port 6000.
@@ -48,8 +48,9 @@ from routes.admin import admin_bp
 from routes.fleet import fleet_bp
 from routes.fabrics import fabrics_bp
 from routes.terminal import terminal_bp
+from routes.arsenal import arsenal_bp
 
-for bp in (admin_bp, fleet_bp, fabrics_bp, terminal_bp):
+for bp in (admin_bp, fleet_bp, fabrics_bp, terminal_bp, arsenal_bp):
     app.register_blueprint(bp)
 
 
@@ -101,6 +102,19 @@ _ssh_tunnel = SSHTunnelManager(fabric_manager=_fabric_manager)
 
 app.config["ssh_terminal"] = _ssh_terminal
 app.config["ssh_tunnel"] = _ssh_tunnel
+
+# ---------------------------------------------------------------------------
+# Arsenal Bridge + Version Tracker (Phase 4)
+# ---------------------------------------------------------------------------
+
+from services.arsenal_bridge import ArsenalBridge
+from services.version_tracker import VersionTracker
+
+_arsenal_bridge = ArsenalBridge(socketio=socketio, fabric_manager=_fabric_manager)
+_version_tracker = VersionTracker(socketio=socketio)
+
+app.config["arsenal_bridge"] = _arsenal_bridge
+app.config["version_tracker"] = _version_tracker
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +274,7 @@ def change_password():
 
 
 # ---------------------------------------------------------------------------
-# SocketIO — fleet + terminal
+# SocketIO — fleet + terminal + arsenal
 # ---------------------------------------------------------------------------
 
 @socketio.on("connect")
@@ -316,5 +330,7 @@ if __name__ == "__main__":
     _fleet_discovery.start()
     _ssh_terminal.start()
     _ssh_tunnel.start()
+    _arsenal_bridge.start()
+    _version_tracker.start()
     socketio.run(app, debug=False, host="0.0.0.0", port=NEXUS_PORT,
                  allow_unsafe_werkzeug=True, ssl_context=_auth.make_ssl_context())

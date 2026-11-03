@@ -4,13 +4,93 @@
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Arsenal</h1>
+  <div class="page-header-right">
+    <span class="arsenal-summary" id="arsenalSummary"></span>
+    <button class="btn btn-sm btn-accent" id="refreshVersionsBtn" onclick="NXA.refreshVersions()">Refresh Versions</button>
+  </div>
 </div>
-<div class="placeholder-panel">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="placeholder-icon">
-    <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
-  </svg>
-  <h2>Remote Tool Management</h2>
-  <p>Install, update, and manage pr0t31n tools across the fleet. Version matrix with fleet-wide visibility.</p>
-  <p class="placeholder-phase">Coming in Phase 4</p>
+
+<!-- Version Matrix -->
+<div class="arsenal-section">
+  <div class="arsenal-section-header">
+    <h2 class="arsenal-section-title">Version Matrix</h2>
+    <span class="arsenal-refresh-time" id="lastRefresh"></span>
+  </div>
+  <div class="arsenal-matrix-wrap" id="matrixWrap">
+    <table class="arsenal-matrix" id="versionMatrix">
+      <thead id="matrixHead"></thead>
+      <tbody id="matrixBody"></tbody>
+    </table>
+    <div class="arsenal-matrix-empty" id="matrixEmpty" style="display:none">
+      <p>No fleet nodes discovered yet. Add nodes via the Fleet page.</p>
+    </div>
+  </div>
+  <div class="arsenal-legend">
+    <span class="legend-item"><span class="vcell vcell-current"></span> Current</span>
+    <span class="legend-item"><span class="vcell vcell-behind"></span> Behind</span>
+    <span class="legend-item"><span class="vcell vcell-ahead"></span> Ahead</span>
+    <span class="legend-item"><span class="vcell vcell-unknown"></span> Unknown</span>
+    <span class="legend-item"><span class="vcell vcell-none"></span> Not Installed</span>
+  </div>
 </div>
+
+<!-- Operations Panel -->
+<div class="arsenal-section">
+  <div class="arsenal-section-header">
+    <h2 class="arsenal-section-title">Operations</h2>
+    <button class="btn btn-sm btn-muted" onclick="NXA.toggleRunForm()">New Operation</button>
+  </div>
+
+  <!-- Run operation form (hidden by default) -->
+  <div class="arsenal-run-form" id="runForm" style="display:none">
+    <div class="run-form-row">
+      <div class="run-form-field">
+        <label>Node</label>
+        <select id="runNode" class="form-select"></select>
+      </div>
+      <div class="run-form-field">
+        <label>Tool</label>
+        <select id="runTool" class="form-select"></select>
+      </div>
+      <div class="run-form-field">
+        <label>Operation</label>
+        <select id="runOp" class="form-select">
+          <option value="status">Status</option>
+          <option value="version">Version</option>
+          <option value="update">Update</option>
+          <option value="install">Install</option>
+          <option value="restart">Restart</option>
+        </select>
+      </div>
+      <div class="run-form-field">
+        <label>Credential</label>
+        <select id="runCred" class="form-select"></select>
+      </div>
+      <div class="run-form-field run-form-actions">
+        <button class="btn btn-sm btn-accent" onclick="NXA.runOperation()">Run</button>
+        <button class="btn btn-sm btn-muted" onclick="NXA.toggleRunForm()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Operations list -->
+  <div class="arsenal-ops" id="opsContainer">
+    <div class="arsenal-ops-empty" id="opsEmpty">No operations yet</div>
+  </div>
+</div>
+
+<!-- Operation output modal -->
+<div class="arsenal-modal-overlay" id="opModal" style="display:none" onclick="NXA.closeOpModal(event)">
+  <div class="arsenal-modal">
+    <div class="arsenal-modal-header">
+      <h3 id="opModalTitle">Operation Output</h3>
+      <button class="btn btn-xs btn-muted" onclick="NXA.closeOpModal()">Close</button>
+    </div>
+    <pre class="arsenal-modal-output" id="opModalOutput"></pre>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/arsenal.js') }}?v={{ app_version }}"></script>
 {% endblock %}

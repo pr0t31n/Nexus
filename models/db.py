@@ -1,4 +1,4 @@
-"""Nexus v2.2 — Database schema and connection management."""
+"""Nexus v2.3 — Database schema and connection management."""
 from __future__ import annotations
 
 import json
@@ -751,6 +751,65 @@ def delete_stale_tunnels() -> int:
     )
     conn.commit()
     return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Arsenal operation helpers
+# ---------------------------------------------------------------------------
+
+def create_arsenal_op(node_id: int, operation: str, tool_name: str = "") -> int:
+    conn = get_conn()
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO arsenal_operations (node_id, operation, tool_name, status, created_at) "
+        "VALUES (?, ?, ?, 'pending', ?)",
+        (node_id, operation, tool_name, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_arsenal_ops(node_id: int | None = None, limit: int = 50) -> list[dict]:
+    conn = get_conn()
+    if node_id is not None:
+        rows = conn.execute(
+            "SELECT ao.*, fn.hostname AS node_hostname "
+            "FROM arsenal_operations ao "
+            "LEFT JOIN fleet_nodes fn ON ao.node_id = fn.id "
+            "WHERE ao.node_id = ? ORDER BY ao.id DESC LIMIT ?",
+            (node_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT ao.*, fn.hostname AS node_hostname "
+            "FROM arsenal_operations ao "
+            "LEFT JOIN fleet_nodes fn ON ao.node_id = fn.id "
+            "ORDER BY ao.id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return dict_rows(rows)
+
+
+def get_arsenal_op(op_id: int) -> dict | None:
+    row = get_conn().execute(
+        "SELECT ao.*, fn.hostname AS node_hostname "
+        "FROM arsenal_operations ao "
+        "LEFT JOIN fleet_nodes fn ON ao.node_id = fn.id "
+        "WHERE ao.id = ?",
+        (op_id,),
+    ).fetchone()
+    return dict_row(row)
+
+
+def update_arsenal_op(op_id: int, **kwargs) -> bool:
+    conn = get_conn()
+    if not kwargs:
+        return False
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [op_id]
+    conn.execute(f"UPDATE arsenal_operations SET {sets} WHERE id = ?", vals)
+    conn.commit()
+    return True
 
 
 # ---------------------------------------------------------------------------
