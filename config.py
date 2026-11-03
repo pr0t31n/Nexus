@@ -1,10 +1,11 @@
-"""Nexus v2.2 — Application configuration."""
+"""Nexus v2.4 — Application configuration."""
 from __future__ import annotations
 
 from pathlib import Path
 
 NEXUS_DIR = Path(__file__).parent.resolve()
 NEXUS_PORT = 6000
+BROKER_PORT = 5401
 
 # Tool registry — services Nexus discovers on the fleet.
 TOOL_REGISTRY = [
@@ -44,8 +45,6 @@ TOOL_INSTALL_MAP: dict[str, str] = {
 ROLES = ("admin", "operator", "viewer")
 
 # Supported fabric types — all types Nexus knows about.
-# Phase 2 ships adapters for openvpn_cloak, amneziawg, direct_lan.
-# Phase 5 ships the remaining adapters.
 FABRIC_TYPES: dict[str, list[str]] = {
     "vpn":     ["openvpn_cloak", "amneziawg", "wireguard", "ipsec_ikev2", "openvpn", "cloudflare_tunnel"],
     "overlay": ["tailscale", "headscale", "zerotier", "nebula", "netbird", "netmaker"],

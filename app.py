@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nexus v2.3 — Network Fabric System
+Nexus v2.4.0 — Network Fabric System
 Fleet management hub for the pr0t31n toolkit. Discovers and manages
 tool instances across any network topology — VPN, overlay, cloud, or LAN.
 Runs on port 6000.
@@ -49,8 +49,11 @@ from routes.fleet import fleet_bp
 from routes.fabrics import fabrics_bp
 from routes.terminal import terminal_bp
 from routes.arsenal import arsenal_bp
+from routes.enrollment import enrollment_bp
+from routes.dispatch import dispatch_bp
 
-for bp in (admin_bp, fleet_bp, fabrics_bp, terminal_bp, arsenal_bp):
+for bp in (admin_bp, fleet_bp, fabrics_bp, terminal_bp, arsenal_bp,
+           enrollment_bp, dispatch_bp):
     app.register_blueprint(bp)
 
 
@@ -116,6 +119,26 @@ _version_tracker = VersionTracker(socketio=socketio)
 app.config["arsenal_bridge"] = _arsenal_bridge
 app.config["version_tracker"] = _version_tracker
 
+# ---------------------------------------------------------------------------
+# Broker Server + Broker CA (Phase 5)
+# ---------------------------------------------------------------------------
+
+_broker = None
+try:
+    from services.broker_ca import init_broker_ca
+    from services.broker import BrokerServer
+
+    _cert_dir = NEXUS_DIR / "certs"
+    init_broker_ca(_cert_dir)
+    _broker = BrokerServer(socketio=socketio, fabric_manager=_fabric_manager)
+    app.config["broker"] = _broker
+    app.config["dispatch_broker"] = _broker
+except ImportError:
+    pass
+except Exception as exc:
+    import logging
+    logging.getLogger("nexus").warning("Broker init failed: %s", exc)
+
 
 # ---------------------------------------------------------------------------
 # Page routes
@@ -139,6 +162,16 @@ def terminal_page():
 @app.route("/arsenal")
 def arsenal_page():
     return render_template("arsenal.html")
+
+
+@app.route("/enrollment")
+def enrollment_page():
+    return render_template("enrollment.html")
+
+
+@app.route("/dispatch")
+def dispatch_page():
+    return render_template("dispatch.html")
 
 
 @app.route("/api/install-tool", methods=["POST"])
@@ -189,7 +222,7 @@ def login():
             session["role"] = "admin"
             if _auth.must_change_password():
                 return redirect(url_for("change_password"))
-            mdb.audit("login", f"User logged in", username=username,
+            mdb.audit("login", "User logged in", username=username,
                       ip=request.remote_addr or "")
             return redirect(url_for("index"))
         return render_template("login.html", error="Invalid credentials.",
@@ -274,7 +307,7 @@ def change_password():
 
 
 # ---------------------------------------------------------------------------
-# SocketIO — fleet + terminal + arsenal
+# SocketIO — fleet + terminal + arsenal + broker
 # ---------------------------------------------------------------------------
 
 @socketio.on("connect")
@@ -332,5 +365,7 @@ if __name__ == "__main__":
     _ssh_tunnel.start()
     _arsenal_bridge.start()
     _version_tracker.start()
+    if _broker:
+        _broker.start()
     socketio.run(app, debug=False, host="0.0.0.0", port=NEXUS_PORT,
                  allow_unsafe_werkzeug=True, ssl_context=_auth.make_ssl_context())

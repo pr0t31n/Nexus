@@ -1,0 +1,84 @@
+{% extends "layout.html" %}
+{% block title %}Enrollment — Nexus{% endblock %}
+{% block page_id %}enrollment{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Enrollment &amp; Broker</h1>
+</div>
+
+<!-- Summary cards -->
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="stat-card-value" id="enrolled-count">0</div>
+    <div class="stat-card-label">Enrolled</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-value" id="pending-count">0</div>
+    <div class="stat-card-label">Pending</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-value" id="connected-count">0</div>
+    <div class="stat-card-label">Connected</div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-enrollment">Enrollment</button>
+  <button class="tab-btn" data-tab="tab-broker">Broker</button>
+</div>
+
+<!-- Enrollment tab -->
+<div class="tab-content active" id="tab-enrollment">
+  <div class="nx-card">
+    <div class="nx-card-header">
+      <h2>Node Enrollment</h2>
+      <button class="nx-btn nx-btn--primary" id="show-issue-form">Issue Certificate</button>
+    </div>
+
+    <div class="issue-form hidden" id="issue-form">
+      <div class="issue-form-inner">
+        <label for="issue-hostname">Hostname</label>
+        <input type="text" id="issue-hostname" class="nx-input" placeholder="e.g. appliance-01.local">
+        <button class="nx-btn nx-btn--primary" id="issue-submit">Submit</button>
+      </div>
+    </div>
+
+    <table class="enrollment-table" id="enrollment-table">
+      <thead>
+        <tr>
+          <th>Hostname</th>
+          <th>Enrolled</th>
+          <th>Agent Connected</th>
+          <th>Agent Version</th>
+          <th>OS</th>
+          <th>Last Seen</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Broker tab -->
+<div class="tab-content" id="tab-broker">
+  <div class="nx-card">
+    <div class="nx-card-header">
+      <h2>Broker Status</h2>
+    </div>
+    <div id="broker-panel" class="broker-panel">
+      <p class="text-muted">Loading broker status...</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/enrollment.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.NX && NX.initEnrollment) NX.initEnrollment();
+  });
+</script>
+{% endblock %}

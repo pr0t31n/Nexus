@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+{% block title %}Dispatch — Nexus{% endblock %}
+{% block page_id %}dispatch{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Fleet Dispatch</h1>
+</div>
+
+<!-- Appliance cards grid -->
+<div class="nx-card">
+  <div class="nx-card-header">
+    <h2>Appliances</h2>
+  </div>
+  <div class="appliance-grid" id="appliance-grid">
+    <p class="text-muted">Loading appliances...</p>
+  </div>
+</div>
+
+<!-- Dispatch form -->
+<div class="nx-card dispatch-form-card">
+  <div class="nx-card-header">
+    <h2>Dispatch Command</h2>
+  </div>
+  <form id="dispatch-form" class="dispatch-form">
+    <div class="dispatch-form-row">
+      <div class="dispatch-form-field">
+        <label for="dispatch-node">Node</label>
+        <select id="dispatch-node" class="nx-input" required>
+          <option value="">Select node...</option>
+        </select>
+      </div>
+      <div class="dispatch-form-field">
+        <label for="dispatch-tool">Tool</label>
+        <select id="dispatch-tool" class="nx-input" required>
+          <option value="">Select tool...</option>
+          <option value="scattershot3">Scattershot3</option>
+          <option value="fracture">Fracture</option>
+          <option value="siphon">Siphon</option>
+          <option value="osift">OSift</option>
+          <option value="gearbox">Gearbox</option>
+          <option value="aether">Aether</option>
+          <option value="bastion">Bastion</option>
+          <option value="auger">Auger</option>
+          <option value="dredge">Dredge</option>
+          <option value="isotope">Isotope</option>
+          <option value="forge">Forge</option>
+          <option value="quill">Quill</option>
+          <option value="pain">pAIn</option>
+          <option value="trawler">Trawler</option>
+        </select>
+      </div>
+    </div>
+    <div class="dispatch-form-row">
+      <div class="dispatch-form-field dispatch-form-field--wide">
+        <label for="dispatch-args">Arguments</label>
+        <textarea id="dispatch-args" class="nx-input" rows="2" placeholder="Optional tool arguments..."></textarea>
+      </div>
+      <div class="dispatch-form-field">
+        <label for="dispatch-timeout">Timeout (s)</label>
+        <input type="number" id="dispatch-timeout" class="nx-input" min="0" value="0" placeholder="0 = none">
+      </div>
+    </div>
+    <div class="dispatch-form-actions">
+      <button type="submit" class="nx-btn nx-btn--primary">Dispatch</button>
+    </div>
+  </form>
+</div>
+
+<!-- Dispatch job log -->
+<div class="nx-card">
+  <div class="nx-card-header">
+    <h2>Dispatch Log</h2>
+  </div>
+  <table class="dispatch-log" id="dispatch-log">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Node</th>
+        <th>Tool</th>
+        <th>Status</th>
+        <th>Started</th>
+        <th>Finished</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dispatch.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.NX && NX.initDispatch) NX.initDispatch();
+  });
+</script>
+{% endblock %}

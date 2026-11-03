@@ -1,0 +1,19 @@
+# Nexus Agent configuration
+# Copy this file and adjust for each deployment node.
+
+# Broker connection
+broker_url: "wss://nexus-host:5401/ws"
+
+# Heartbeat interval (seconds)
+heartbeat_interval: 30
+
+# Override detected hostname (leave empty for auto-detect)
+hostname_override: ""
+
+# mTLS certificates (issued by nexus enrollment)
+cert_file: ""
+key_file: ""
+ca_file: ""
+
+# Tools this agent is allowed to manage (empty = all)
+allowed_tools: []

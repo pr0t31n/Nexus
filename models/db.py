@@ -1,4 +1,4 @@
-"""Nexus v2.3 — Database schema and connection management."""
+"""Nexus v2.4 — Database schema and connection management."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 _DB_PATH: Path | None = None
 _local = threading.local()
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def init_db(db_path: Path) -> None:
@@ -186,6 +186,37 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at      TEXT NOT NULL
 );
 
+-- Enrollment jobs (Phase 5)
+CREATE TABLE IF NOT EXISTS enrollment_jobs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id         INTEGER NOT NULL REFERENCES fleet_nodes(id) ON DELETE CASCADE,
+    fabric_ids      TEXT DEFAULT '[]',
+    status          TEXT DEFAULT 'pending',
+    result          TEXT DEFAULT '',
+    requested_by    TEXT DEFAULT 'system',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Fleet dispatch jobs (Phase 5)
+CREATE TABLE IF NOT EXISTS dispatch_jobs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id         INTEGER NOT NULL REFERENCES fleet_nodes(id) ON DELETE CASCADE,
+    tool            TEXT NOT NULL DEFAULT '',
+    cmd             TEXT DEFAULT '',
+    args            TEXT DEFAULT '{}',
+    scope           TEXT DEFAULT '',
+    dispatch_id     TEXT DEFAULT '',
+    cmd_id          TEXT DEFAULT '',
+    arsenal_op_id   INTEGER,
+    status          TEXT DEFAULT 'pending',
+    output          TEXT DEFAULT '',
+    requested_by    TEXT DEFAULT 'system',
+    started_at      TEXT,
+    finished_at     TEXT,
+    created_at      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_fleet_status      ON fleet_nodes(status);
 CREATE INDEX IF NOT EXISTS idx_tool_node         ON tool_instances(node_id);
 CREATE INDEX IF NOT EXISTS idx_addr_node         ON node_network_addresses(node_id);
@@ -193,6 +224,9 @@ CREATE INDEX IF NOT EXISTS idx_addr_fabric       ON node_network_addresses(fabri
 CREATE INDEX IF NOT EXISTS idx_audit_ts          ON audit_log(ts);
 CREATE INDEX IF NOT EXISTS idx_arsenal_node      ON arsenal_operations(node_id);
 CREATE INDEX IF NOT EXISTS idx_tunnel_node       ON tunnels(node_id);
+CREATE INDEX IF NOT EXISTS idx_enroll_node       ON enrollment_jobs(node_id);
+CREATE INDEX IF NOT EXISTS idx_dispatch_node     ON dispatch_jobs(node_id);
+CREATE INDEX IF NOT EXISTS idx_dispatch_status   ON dispatch_jobs(status);
 """
 
 
@@ -810,6 +844,110 @@ def update_arsenal_op(op_id: int, **kwargs) -> bool:
     conn.execute(f"UPDATE arsenal_operations SET {sets} WHERE id = ?", vals)
     conn.commit()
     return True
+
+
+# ---------------------------------------------------------------------------
+# Enrollment job helpers (Phase 5)
+# ---------------------------------------------------------------------------
+
+def create_enrollment_job(node_id: int, fabric_ids: str = "[]",
+                          requested_by: str = "system") -> int:
+    conn = get_conn()
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO enrollment_jobs "
+        "(node_id, fabric_ids, status, requested_by, created_at, updated_at) "
+        "VALUES (?, ?, 'pending', ?, ?, ?)",
+        (node_id, fabric_ids, requested_by, now, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_enrollment_job(job_id: int, **kwargs) -> bool:
+    conn = get_conn()
+    if not kwargs:
+        return False
+    kwargs["updated_at"] = _now()
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [job_id]
+    conn.execute(f"UPDATE enrollment_jobs SET {sets} WHERE id = ?", vals)
+    conn.commit()
+    return True
+
+
+def get_enrollment_job(job_id: int) -> dict | None:
+    row = get_conn().execute(
+        "SELECT ej.*, fn.hostname AS node_hostname "
+        "FROM enrollment_jobs ej "
+        "LEFT JOIN fleet_nodes fn ON ej.node_id = fn.id "
+        "WHERE ej.id = ?",
+        (job_id,),
+    ).fetchone()
+    return dict_row(row)
+
+
+def get_enrollment_jobs(limit: int = 50) -> list[dict]:
+    rows = get_conn().execute(
+        "SELECT ej.*, fn.hostname AS node_hostname "
+        "FROM enrollment_jobs ej "
+        "LEFT JOIN fleet_nodes fn ON ej.node_id = fn.id "
+        "ORDER BY ej.id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return dict_rows(rows)
+
+
+# ---------------------------------------------------------------------------
+# Dispatch job helpers (Phase 5)
+# ---------------------------------------------------------------------------
+
+def create_dispatch_job(node_id: int, tool: str = "", args: str = "{}",
+                        scope: str = "", requested_by: str = "system",
+                        cmd: str = "", dispatch_id: str = "") -> int:
+    conn = get_conn()
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO dispatch_jobs "
+        "(node_id, tool, cmd, args, scope, dispatch_id, status, requested_by, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+        (node_id, tool, cmd, args, scope, dispatch_id, requested_by, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_dispatch_job(job_id: int, **kwargs) -> bool:
+    conn = get_conn()
+    if not kwargs:
+        return False
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [job_id]
+    conn.execute(f"UPDATE dispatch_jobs SET {sets} WHERE id = ?", vals)
+    conn.commit()
+    return True
+
+
+def get_dispatch_job(job_id: int) -> dict | None:
+    row = get_conn().execute(
+        "SELECT dj.*, fn.hostname AS node_hostname "
+        "FROM dispatch_jobs dj "
+        "LEFT JOIN fleet_nodes fn ON dj.node_id = fn.id "
+        "WHERE dj.id = ?",
+        (job_id,),
+    ).fetchone()
+    return dict_row(row)
+
+
+def get_dispatch_jobs(limit: int = 50) -> list[dict]:
+    rows = get_conn().execute(
+        "SELECT dj.*, fn.hostname AS node_hostname "
+        "FROM dispatch_jobs dj "
+        "LEFT JOIN fleet_nodes fn ON dj.node_id = fn.id "
+        "ORDER BY dj.id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return dict_rows(rows)
 
 
 # ---------------------------------------------------------------------------
