@@ -1,4 +1,4 @@
-"""Nexus fabric adapter — AmneziaWG (AmneziaWG (fallback VPN))."""
+"""Nexus fabric adapter — AmneziaWG (fallback VPN)."""
 from __future__ import annotations
 
 import json

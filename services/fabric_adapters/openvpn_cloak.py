@@ -1,4 +1,4 @@
-"""Nexus fabric adapter — OpenVPN + Cloak (OpenVPN + Cloak (primary VPN))."""
+"""Nexus fabric adapter — OpenVPN + Cloak (primary VPN)."""
 from __future__ import annotations
 
 import os
