@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en" data-palette="resume" data-mode="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Nexus{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/nexus.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ app_version }}">
+  <script>
+    (function(){
+      try {
+        var p = localStorage.getItem('nexus-palette');
+        var m = localStorage.getItem('nexus-mode');
+        var html = document.documentElement;
+        if (p) html.setAttribute('data-palette', p);
+        if (m === 'light' || m === 'dark') html.setAttribute('data-mode', m);
+      } catch(e) {}
+    })();
+  </script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <svg class="sidebar-logo" viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="44" cy="44" r="10" fill="currentColor" opacity=".2" stroke="currentColor" stroke-width="2"/>
+      <circle cx="44" cy="44" r="5"  fill="currentColor" opacity=".5"/>
+      <line x1="44" y1="34" x2="44" y2="14" stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+      <line x1="44" y1="54" x2="44" y2="74" stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+      <line x1="34" y1="44" x2="14" y2="44" stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+      <line x1="54" y1="44" x2="74" y2="44" stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+      <line x1="37" y1="37" x2="22" y2="22" stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+      <line x1="51" y1="37" x2="66" y2="22" stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+      <line x1="51" y1="51" x2="66" y2="66" stroke="currentColor" stroke-width="1.5" opacity=".6"/>
+      <circle cx="44" cy="11" r="4" fill="currentColor" opacity=".75"/>
+      <circle cx="44" cy="77" r="4" fill="currentColor" opacity=".75"/>
+      <circle cx="11" cy="44" r="4" fill="currentColor" opacity=".75"/>
+      <circle cx="77" cy="44" r="4" fill="currentColor" opacity=".75"/>
+      <circle cx="19" cy="19" r="4" fill="currentColor" opacity=".75"/>
+      <circle cx="69" cy="19" r="4" fill="currentColor" opacity=".75"/>
+      <circle cx="69" cy="69" r="4" fill="currentColor" opacity=".75"/>
+    </svg>
+    <div class="sidebar-brand-text">
+      <span class="sidebar-title">NEXUS</span>
+      <span class="sidebar-sub">v{{ version }}</span>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a href="/fleet" class="sidebar-link{% if request.path in ('/', '/fleet') %} active{% endif %}" data-page="fleet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Fleet</span>
+      <span class="sidebar-badge" id="badgeFleet" title="Online nodes">-</span>
+    </a>
+    <a href="/terminal" class="sidebar-link{% if request.path == '/terminal' %} active{% endif %}" data-page="terminal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="6,10 10,14 6,18"/><line x1="12" y1="18" x2="18" y2="18"/></svg>
+      <span>Terminal</span>
+    </a>
+    <a href="/arsenal" class="sidebar-link{% if request.path == '/arsenal' %} active{% endif %}" data-page="arsenal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+      <span>Arsenal</span>
+    </a>
+    <a href="/settings" class="sidebar-link{% if request.path == '/settings' %} active{% endif %}" data-page="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span>Settings</span>
+    </a>
+  </nav>
+
+  <!-- Network health (populated by JS from fabric data) -->
+  <div class="sidebar-section" id="sidebarNetworks">
+    <div class="sidebar-section-title">Networks</div>
+    <div class="sidebar-section-body" id="networkList">
+      <span class="sidebar-empty">No fabrics configured</span>
+    </div>
+  </div>
+
+  <!-- Bottom controls -->
+  <div class="sidebar-footer">
+    <!-- Palette picker -->
+    <div class="sidebar-control">
+      <label class="sidebar-control-label">Theme</label>
+      <select id="paletteSelect" class="sidebar-select"></select>
+    </div>
+    <!-- Dark/light toggle -->
+    <div class="sidebar-control">
+      <label class="sidebar-control-label" id="modeLabel">Light</label>
+      <label class="theme-switch" title="Toggle light/dark">
+        <input type="checkbox" id="themeToggle">
+        <span class="theme-switch-track"><span class="theme-switch-thumb"></span></span>
+      </label>
+    </div>
+    <!-- Scan + Logout -->
+    <div class="sidebar-actions">
+      <button class="btn btn-sm btn-accent" id="scanBtn" onclick="NX.triggerScan()">Scan Now</button>
+      <a href="/logout" class="btn btn-sm btn-muted">Logout</a>
+    </div>
+    <div class="sidebar-scan-time" id="lastScan">{% block last_scan %}{% endblock %}</div>
+  </div>
+</aside>
+
+<!-- ── Main content ── -->
+<main class="main-content" id="mainContent">
+  {% block content %}{% endblock %}
+</main>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='js/nexus.js') }}?v={{ app_version }}"></script>
+{% block scripts %}{% endblock %}
+
+<!-- ── Session Timeout Warning ── -->
+<div class="session-timeout-overlay" id="sessionTimeoutOverlay">
+  <div class="session-timeout-card">
+    <h3>Session Expiring Soon</h3>
+    <p>Your session will expire in</p>
+    <span class="session-timeout-countdown" id="sessionTimeoutCountdown">5:00</span>
+    <p>Click <strong>Continue Session</strong> to stay logged in.</p>
+    <div class="session-timeout-btns">
+      <button class="btn btn-danger" onclick="window.location.href='/logout'">Logout</button>
+      <button class="btn btn-accent" onclick="NX.sessionContinue()">Continue Session</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

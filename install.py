@@ -24,7 +24,7 @@ W  = "\033[0m"
 APP_NAME     = "Nexus"
 APP_DIR      = Path("/opt/pr0t31n/Nexus")
 SERVICE_NAME = "pr0t31n-nexus"
-APP_PORT     = 5000
+APP_PORT     = 5400
 
 SYSTEMD_UNIT = Path(f"/etc/systemd/system/{SERVICE_NAME}.service")
 LAUNCHD_PLIST = Path(f"/Library/LaunchDaemons/com.pr0t31n.nexus.plist")
@@ -42,8 +42,8 @@ BREW_PKGS   = ["openssl", "nmap", "git"]
 PIP_PKGS = [
     "flask>=3.0.0",
     "flask-socketio>=5.3.0",
-    "eventlet>=0.35.0",
     "requests>=2.28.0",
+    "cryptography>=41.0.0",
 ]
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ PIP_PKGS = [
 def banner():
     print(f"""
 {C}╔══════════════════════════════════════════════╗
-║        Nexus — Hub Flask Web Application     ║
+║      Nexus — Network Fabric System           ║
 ║        Install Script                        ║
 ╚══════════════════════════════════════════════╝{W}
 """)

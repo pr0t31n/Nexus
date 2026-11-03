@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+{% block title %}Nexus — Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Settings</h1>
+</div>
+
+<div class="settings-grid">
+  <!-- Discovery settings -->
+  <div class="card">
+    <div class="card-header">Discovery</div>
+    <div class="card-body" id="settingsDiscovery">
+      <div class="form-row">
+        <label>Scan interval (seconds)</label>
+        <input type="number" class="form-input" data-key="discovery_interval_s" min="30" step="10">
+      </div>
+      <div class="form-row">
+        <label>Offline threshold (cycles)</label>
+        <input type="number" class="form-input" data-key="offline_threshold_cycles" min="1" max="20">
+      </div>
+      <div class="form-row">
+        <label>Scan workers</label>
+        <input type="number" class="form-input" data-key="scan_workers" min="4" max="256">
+      </div>
+      <div class="form-row">
+        <label>TCP probe timeout (seconds)</label>
+        <input type="number" class="form-input" data-key="scan_timeout_s" min="0.1" max="5" step="0.1">
+      </div>
+    </div>
+    <div class="card-footer">
+      <button class="btn btn-accent" onclick="NX.saveSettings('settingsDiscovery')">Save</button>
+    </div>
+  </div>
+
+  <!-- SSH settings -->
+  <div class="card">
+    <div class="card-header">SSH &amp; Terminal</div>
+    <div class="card-body" id="settingsSSH">
+      <div class="form-row">
+        <label>Max SSH sessions</label>
+        <input type="number" class="form-input" data-key="max_ssh_sessions" min="1" max="50">
+      </div>
+      <div class="form-row">
+        <label>Idle timeout (seconds)</label>
+        <input type="number" class="form-input" data-key="ssh_idle_timeout_s" min="60">
+      </div>
+      <div class="form-row">
+        <label>Max terminal tabs</label>
+        <input type="number" class="form-input" data-key="max_terminal_tabs" min="1" max="10">
+      </div>
+      <div class="form-row">
+        <label>SSH discovery interval (seconds)</label>
+        <input type="number" class="form-input" data-key="ssh_discovery_interval_s" min="300">
+      </div>
+    </div>
+    <div class="card-footer">
+      <button class="btn btn-accent" onclick="NX.saveSettings('settingsSSH')">Save</button>
+    </div>
+  </div>
+
+  <!-- Network fabrics -->
+  <div class="card card-wide">
+    <div class="card-header">
+      Network Fabrics
+      <button class="btn btn-sm btn-accent" onclick="NX.addFabric()" style="margin-left:auto">Add Network</button>
+    </div>
+    <div class="card-body" id="fabricList">
+      <div class="empty-state-inline">No fabrics configured. Add a network to begin fleet discovery.</div>
+    </div>
+  </div>
+
+  <!-- Audit log -->
+  <div class="card card-wide">
+    <div class="card-header">Audit Log</div>
+    <div class="card-body" id="auditLog" style="max-height:400px;overflow-y:auto">
+      <table class="tbl">
+        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
+        <tbody id="auditBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  NX.loadSettings();
+  NX.loadAudit();
+  NX.loadFabrics();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+{% block title %}Nexus — Fleet{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Fleet</h1>
+  <div class="page-header-right">
+    <div class="stat-bar" id="fleetStats">
+      <span class="stat" id="statTotal"><span class="stat-num">-</span> Total</span>
+      <span class="stat stat-online" id="statOnline"><span class="stat-num">-</span> Online</span>
+      <span class="stat stat-offline" id="statOffline"><span class="stat-num">-</span> Offline</span>
+      <span class="stat stat-scanning" id="statScanning"><span class="stat-num">-</span> Scanning</span>
+      <span class="stat stat-enrolled" id="statEnrolled"><span class="stat-num">-</span> Enrolled</span>
+    </div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <input id="searchInput" class="search-input" type="search"
+         placeholder="Filter by name, IP, or tool…" autocomplete="off">
+  <div class="filter-chips" id="filterChips"></div>
+</div>
+
+<div class="fleet-grid" id="fleetGrid">
+  <div class="empty-state">
+    <div class="empty-state-icon">&#9685;</div>
+    <div class="empty-state-msg">Scanning fleet… click <strong>Scan Now</strong> to search all interfaces.</div>
+  </div>
+</div>
+{% endblock %}
