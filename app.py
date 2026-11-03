@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nexus v2.4.0 — Network Fabric System
+Nexus v2.5.0 — Network Fabric System
 Fleet management hub for the pr0t31n toolkit. Discovers and manages
 tool instances across any network topology — VPN, overlay, cloud, or LAN.
 Runs on port 6000.
@@ -51,9 +51,10 @@ from routes.terminal import terminal_bp
 from routes.arsenal import arsenal_bp
 from routes.enrollment import enrollment_bp
 from routes.dispatch import dispatch_bp
+from routes.audit import audit_bp
 
 for bp in (admin_bp, fleet_bp, fabrics_bp, terminal_bp, arsenal_bp,
-           enrollment_bp, dispatch_bp):
+           enrollment_bp, dispatch_bp, audit_bp):
     app.register_blueprint(bp)
 
 
@@ -65,6 +66,14 @@ def _security_headers(response):
 @app.before_request
 def _auth_gate():
     return _auth.auth_gate()
+
+
+# ---------------------------------------------------------------------------
+# Audit middleware (Phase 6)
+# ---------------------------------------------------------------------------
+
+from services.audit_middleware import init_audit_middleware
+init_audit_middleware(app)
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +148,25 @@ except Exception as exc:
     import logging
     logging.getLogger("nexus").warning("Broker init failed: %s", exc)
 
+# ---------------------------------------------------------------------------
+# Session Monitor + Port Monitor + Retention Reaper + Node Historian (Phase 6)
+# ---------------------------------------------------------------------------
+
+from services.session_monitor import SessionMonitor
+from services.port_monitor import PortMonitor
+from services.retention_reaper import RetentionReaper
+from services.node_historian import NodeHistorian
+
+_session_monitor = SessionMonitor(socketio=socketio)
+_port_monitor = PortMonitor(socketio=socketio)
+_retention_reaper = RetentionReaper(socketio=socketio)
+_node_historian = NodeHistorian(socketio=socketio)
+
+app.config["session_monitor"] = _session_monitor
+app.config["port_monitor"] = _port_monitor
+app.config["retention_reaper"] = _retention_reaper
+app.config["node_historian"] = _node_historian
+
 
 # ---------------------------------------------------------------------------
 # Page routes
@@ -172,6 +200,11 @@ def enrollment_page():
 @app.route("/dispatch")
 def dispatch_page():
     return render_template("dispatch.html")
+
+
+@app.route("/audit")
+def audit_page():
+    return render_template("audit.html")
 
 
 @app.route("/api/install-tool", methods=["POST"])
@@ -367,5 +400,9 @@ if __name__ == "__main__":
     _version_tracker.start()
     if _broker:
         _broker.start()
+    _session_monitor.start()
+    _port_monitor.start()
+    _retention_reaper.start()
+    _node_historian.start()
     socketio.run(app, debug=False, host="0.0.0.0", port=NEXUS_PORT,
                  allow_unsafe_werkzeug=True, ssl_context=_auth.make_ssl_context())

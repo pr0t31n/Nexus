@@ -1,0 +1,274 @@
+{% extends "layout.html" %}
+{% block title %}Audit — Nexus{% endblock %}
+{% block page_id %}audit{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Audit &amp; Monitoring</h1>
+</div>
+
+<!-- Summary cards -->
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="stat-card-value" id="stat-active-sessions">—</div>
+    <div class="stat-card-label">Active Sessions</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-value" id="stat-open-ports">—</div>
+    <div class="stat-card-label">Open Ports</div>
+  </div>
+  <div class="stat-card stat-card--warn">
+    <div class="stat-card-value" id="stat-unexpected">—</div>
+    <div class="stat-card-label">Unexpected Ports</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-value" id="stat-failed-auth">—</div>
+    <div class="stat-card-label">Failed Auth (24h)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-card-value" id="stat-audit-24h">—</div>
+    <div class="stat-card-label">Audit Events (24h)</div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-sessions">Sessions</button>
+  <button class="tab-btn" data-tab="tab-ports">Ports / Services</button>
+  <button class="tab-btn" data-tab="tab-auditlog">Audit Log</button>
+  <button class="tab-btn" data-tab="tab-nodehistory">Node History</button>
+</div>
+
+<!-- ────────────────────── Sessions ────────────────────── -->
+<div class="tab-content active" id="tab-sessions">
+  <div class="nx-card">
+    <div class="nx-card-header">
+      <h2>Remote Sessions</h2>
+      <span class="badge badge-accent" id="sessions-retention">1-year retention</span>
+    </div>
+
+    <div class="audit-filters">
+      <input type="text" class="nx-input" id="sess-search" placeholder="Search IP, user, method…">
+      <select class="nx-input nx-input--sm" id="sess-method">
+        <option value="">All Methods</option>
+        <option value="ssh">SSH</option>
+        <option value="rdp">RDP</option>
+        <option value="vnc">VNC</option>
+        <option value="telnet">Telnet</option>
+        <option value="web">Web/HTTPS</option>
+      </select>
+      <select class="nx-input nx-input--sm" id="sess-result">
+        <option value="">All Results</option>
+        <option value="success">Success</option>
+        <option value="failed">Failed</option>
+        <option value="timeout">Timeout</option>
+      </select>
+      <input type="datetime-local" class="nx-input nx-input--sm" id="sess-from" step="1" title="From">
+      <input type="datetime-local" class="nx-input nx-input--sm" id="sess-to" step="1" title="To">
+      <button class="nx-btn" id="sess-clear-filters">Clear</button>
+    </div>
+
+    <table class="audit-table" id="sessions-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Method</th>
+          <th>Source IP</th>
+          <th>Username</th>
+          <th>Node</th>
+          <th>Result</th>
+          <th>Duration</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="audit-pagination" id="sessions-pager">
+      <button class="nx-btn nx-btn--sm" id="sess-prev" disabled>← Prev</button>
+      <span class="audit-page-info" id="sess-page-info">Page 1</span>
+      <button class="nx-btn nx-btn--sm" id="sess-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────── Ports / Services ────────────────────── -->
+<div class="tab-content" id="tab-ports">
+  <div class="nx-card">
+    <div class="nx-card-header">
+      <h2>Service Ports</h2>
+      <span class="badge badge-accent" id="ports-retention">3-year retention</span>
+    </div>
+
+    <div class="audit-filters">
+      <input type="text" class="nx-input" id="port-search" placeholder="Search port, service, binary…">
+      <select class="nx-input nx-input--sm" id="port-state">
+        <option value="">All States</option>
+        <option value="1">Open</option>
+        <option value="0">Closed</option>
+      </select>
+      <select class="nx-input nx-input--sm" id="port-wl">
+        <option value="">All</option>
+        <option value="1">Whitelisted</option>
+        <option value="0">Not Whitelisted</option>
+      </select>
+      <select class="nx-input nx-input--sm" id="port-proto">
+        <option value="">All Protocols</option>
+        <option value="tcp">TCP</option>
+        <option value="udp">UDP</option>
+      </select>
+      <button class="nx-btn" id="port-clear-filters">Clear</button>
+    </div>
+
+    <table class="audit-table" id="ports-table">
+      <thead>
+        <tr>
+          <th>Port</th>
+          <th>Proto</th>
+          <th>Service</th>
+          <th>Bind Address</th>
+          <th>Process Owner</th>
+          <th>Binary</th>
+          <th>State</th>
+          <th>Whitelist</th>
+          <th>Arsenal Match</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="audit-pagination" id="ports-pager">
+      <button class="nx-btn nx-btn--sm" id="port-prev" disabled>← Prev</button>
+      <span class="audit-page-info" id="port-page-info">Page 1</span>
+      <button class="nx-btn nx-btn--sm" id="port-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────── Audit Log ────────────────────── -->
+<div class="tab-content" id="tab-auditlog">
+  <div class="nx-card">
+    <div class="nx-card-header">
+      <h2>Audit Log</h2>
+      <span class="badge badge-accent" id="audit-retention">3-month retention</span>
+    </div>
+
+    <div class="audit-filters">
+      <input type="text" class="nx-input" id="log-search" placeholder="Search action, user, detail…">
+      <select class="nx-input nx-input--sm" id="log-severity">
+        <option value="">All Severity</option>
+        <option value="info">Info</option>
+        <option value="warning">Warning</option>
+        <option value="error">Error</option>
+        <option value="critical">Critical</option>
+      </select>
+      <input type="datetime-local" class="nx-input nx-input--sm" id="log-from" step="1" title="From">
+      <input type="datetime-local" class="nx-input nx-input--sm" id="log-to" step="1" title="To">
+      <button class="nx-btn" id="log-clear-filters">Clear</button>
+    </div>
+
+    <table class="audit-table" id="auditlog-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Severity</th>
+          <th>Action</th>
+          <th>User</th>
+          <th>Detail</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="audit-pagination" id="log-pager">
+      <button class="nx-btn nx-btn--sm" id="log-prev" disabled>← Prev</button>
+      <span class="audit-page-info" id="log-page-info">Page 1</span>
+      <button class="nx-btn nx-btn--sm" id="log-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────── Node History ────────────────────── -->
+<div class="tab-content" id="tab-nodehistory">
+  <div class="nx-card">
+    <div class="nx-card-header">
+      <h2>Node History</h2>
+      <span class="badge badge-accent" id="nh-retention">3-year retention</span>
+    </div>
+
+    <div class="audit-filters">
+      <input type="text" class="nx-input" id="nh-search" placeholder="Search node, event…">
+      <select class="nx-input nx-input--sm" id="nh-event-type">
+        <option value="">All Events</option>
+        <option value="connect">Connect</option>
+        <option value="disconnect">Disconnect</option>
+        <option value="ip_change">IP Change</option>
+        <option value="network_change">Network Change</option>
+        <option value="version_change">Version Change</option>
+        <option value="cert_lifecycle">Certificate</option>
+        <option value="fabric_change">Fabric Change</option>
+        <option value="os_drift">OS/Hardware Drift</option>
+      </select>
+      <input type="datetime-local" class="nx-input nx-input--sm" id="nh-from" step="1" title="From">
+      <input type="datetime-local" class="nx-input nx-input--sm" id="nh-to" step="1" title="To">
+      <button class="nx-btn" id="nh-clear-filters">Clear</button>
+    </div>
+
+    <table class="audit-table" id="nodehistory-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Node</th>
+          <th>Event</th>
+          <th>Previous</th>
+          <th>Current</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="audit-pagination" id="nh-pager">
+      <button class="nx-btn nx-btn--sm" id="nh-prev" disabled>← Prev</button>
+      <span class="audit-page-info" id="nh-page-info">Page 1</span>
+      <button class="nx-btn nx-btn--sm" id="nh-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Session detail drawer -->
+<div class="audit-drawer" id="session-drawer">
+  <div class="audit-drawer-backdrop" id="session-drawer-backdrop"></div>
+  <div class="audit-drawer-panel">
+    <div class="audit-drawer-header">
+      <h3>Session Detail</h3>
+      <button class="nx-btn nx-btn--sm" id="session-drawer-close">&times;</button>
+    </div>
+    <div class="audit-drawer-body" id="session-drawer-body">
+      <p class="text-muted">Loading…</p>
+    </div>
+  </div>
+</div>
+
+<!-- Port detail / whitelist modal -->
+<div class="audit-modal-overlay" id="port-modal-overlay">
+  <div class="audit-modal">
+    <div class="audit-modal-header">
+      <h3 id="port-modal-title">Port Detail</h3>
+      <button class="nx-btn nx-btn--sm" id="port-modal-close">&times;</button>
+    </div>
+    <div class="audit-modal-body" id="port-modal-body"></div>
+    <div class="audit-modal-footer" id="port-modal-footer"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/audit.js') }}?v={{ app_version }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.NX && NX.initAudit) NX.initAudit();
+  });
+</script>
+{% endblock %}

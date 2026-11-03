@@ -1,4 +1,4 @@
-"""Nexus v2.4 — Database schema and connection management."""
+"""Nexus v2.5 — Database schema and connection management."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 _DB_PATH: Path | None = None
 _local = threading.local()
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def init_db(db_path: Path) -> None:
@@ -167,7 +167,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
     username        TEXT NOT NULL DEFAULT 'system',
     action          TEXT NOT NULL,
     detail          TEXT DEFAULT '',
-    ip              TEXT DEFAULT ''
+    ip              TEXT DEFAULT '',
+    event_type      TEXT DEFAULT '',
+    severity        TEXT DEFAULT 'info',
+    resource_type   TEXT DEFAULT '',
+    resource_id     TEXT DEFAULT '',
+    actor_user_agent TEXT DEFAULT '',
+    actor_hostname  TEXT DEFAULT '',
+    details_json    TEXT DEFAULT ''
 );
 
 -- Users with RBAC roles
@@ -217,16 +224,85 @@ CREATE TABLE IF NOT EXISTS dispatch_jobs (
     created_at      TEXT NOT NULL
 );
 
+-- Remote session tracking (1yr retention — Phase 6)
+CREATE TABLE IF NOT EXISTS remote_sessions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp_start TEXT NOT NULL,
+    timestamp_end   TEXT,
+    method          TEXT NOT NULL,
+    interface       TEXT DEFAULT '',
+    source_ip       TEXT NOT NULL,
+    source_mac      TEXT DEFAULT '',
+    source_hostname TEXT DEFAULT '',
+    username        TEXT DEFAULT '',
+    auth_method     TEXT DEFAULT '',
+    auth_result     TEXT NOT NULL DEFAULT 'success',
+    session_type    TEXT DEFAULT '',
+    key_fingerprint TEXT DEFAULT '',
+    geo_ip          TEXT DEFAULT '',
+    asn             TEXT DEFAULT '',
+    process_name    TEXT DEFAULT '',
+    process_pid     INTEGER,
+    created_at      TEXT NOT NULL
+);
+
+-- Port/service tracking (3yr retention — Phase 6)
+CREATE TABLE IF NOT EXISTS service_ports (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    port            INTEGER NOT NULL,
+    protocol        TEXT NOT NULL DEFAULT 'tcp',
+    bind_address    TEXT NOT NULL,
+    service_name    TEXT DEFAULT '',
+    process_name    TEXT DEFAULT '',
+    process_user    TEXT DEFAULT '',
+    process_binary  TEXT DEFAULT '',
+    binary_hash     TEXT DEFAULT '',
+    first_seen      TEXT NOT NULL,
+    last_seen       TEXT,
+    is_open         INTEGER NOT NULL DEFAULT 1,
+    notes           TEXT DEFAULT '',
+    whitelisted     INTEGER NOT NULL DEFAULT 0,
+    whitelisted_by  TEXT DEFAULT '',
+    whitelisted_at  TEXT DEFAULT '',
+    whitelisted_reason TEXT DEFAULT '',
+    arsenal_tool_match TEXT DEFAULT '',
+    firewall_allowed INTEGER,
+    created_at      TEXT NOT NULL
+);
+
+-- Node/appliance change history (3yr retention — Phase 6)
+CREATE TABLE IF NOT EXISTS node_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id         TEXT NOT NULL,
+    timestamp       TEXT NOT NULL,
+    event_type      TEXT NOT NULL,
+    old_value       TEXT DEFAULT '',
+    new_value       TEXT DEFAULT '',
+    details         TEXT DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_fleet_status      ON fleet_nodes(status);
 CREATE INDEX IF NOT EXISTS idx_tool_node         ON tool_instances(node_id);
 CREATE INDEX IF NOT EXISTS idx_addr_node         ON node_network_addresses(node_id);
 CREATE INDEX IF NOT EXISTS idx_addr_fabric       ON node_network_addresses(fabric_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ts          ON audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_type        ON audit_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_arsenal_node      ON arsenal_operations(node_id);
 CREATE INDEX IF NOT EXISTS idx_tunnel_node       ON tunnels(node_id);
 CREATE INDEX IF NOT EXISTS idx_enroll_node       ON enrollment_jobs(node_id);
 CREATE INDEX IF NOT EXISTS idx_dispatch_node     ON dispatch_jobs(node_id);
 CREATE INDEX IF NOT EXISTS idx_dispatch_status   ON dispatch_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_start    ON remote_sessions(timestamp_start);
+CREATE INDEX IF NOT EXISTS idx_sessions_ip       ON remote_sessions(source_ip);
+CREATE INDEX IF NOT EXISTS idx_sessions_method   ON remote_sessions(method);
+CREATE INDEX IF NOT EXISTS idx_sessions_result   ON remote_sessions(auth_result);
+CREATE INDEX IF NOT EXISTS idx_ports_port        ON service_ports(port);
+CREATE INDEX IF NOT EXISTS idx_ports_open        ON service_ports(is_open);
+CREATE INDEX IF NOT EXISTS idx_ports_wl          ON service_ports(whitelisted);
+CREATE INDEX IF NOT EXISTS idx_node_hist_node    ON node_history(node_id);
+CREATE INDEX IF NOT EXISTS idx_node_hist_type    ON node_history(event_type);
+CREATE INDEX IF NOT EXISTS idx_node_hist_ts      ON node_history(timestamp);
 """
 
 
@@ -238,6 +314,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col, tbl, default in [
         ("vm_role", "fleet_nodes", None),
         ("config_enc", "network_fabrics", "''"),
+        ("event_type", "audit_log", "''"),
+        ("severity", "audit_log", "'info'"),
+        ("resource_type", "audit_log", "''"),
+        ("resource_id", "audit_log", "''"),
+        ("actor_user_agent", "audit_log", "''"),
+        ("actor_hostname", "audit_log", "''"),
+        ("details_json", "audit_log", "''"),
     ]:
         try:
             defstr = f" DEFAULT {default}" if default is not None else ""
@@ -265,6 +348,13 @@ _DEFAULTS = {
     "broker_port":              "5401",
     "default_palette":          "resume",
     "default_mode":             "light",
+    "retention_sessions_days":  "365",
+    "retention_ports_days":     "1095",
+    "retention_audit_days":     "90",
+    "retention_node_history_days": "1095",
+    "retention_reaper_interval_s": "86400",
+    "session_monitor_interval_s":  "30",
+    "port_monitor_interval_s":     "60",
 }
 
 
@@ -307,11 +397,19 @@ def get_all_settings() -> dict:
 # Audit log
 # ---------------------------------------------------------------------------
 
-def audit(action: str, detail: str = "", username: str = "system", ip: str = "") -> None:
+def audit(action: str, detail: str = "", username: str = "system", ip: str = "",
+          *, event_type: str = "", severity: str = "info",
+          resource_type: str = "", resource_id: str = "",
+          user_agent: str = "", hostname: str = "", details_json: str = "") -> None:
     conn = get_conn()
     conn.execute(
-        "INSERT INTO audit_log (ts, username, action, detail, ip) VALUES (?, ?, ?, ?, ?)",
-        (_now(), username, action, detail, ip),
+        "INSERT INTO audit_log "
+        "(ts, username, action, detail, ip, event_type, severity, "
+        " resource_type, resource_id, actor_user_agent, actor_hostname, details_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (_now(), username, action, detail, ip,
+         event_type, severity, resource_type, resource_id,
+         user_agent, hostname, details_json),
     )
     conn.commit()
 
@@ -322,6 +420,349 @@ def get_audit_log(limit: int = 200, offset: int = 0) -> list[dict]:
         (limit, offset),
     ).fetchall()
     return dict_rows(rows)
+
+
+def get_audit_log_v2(limit: int = 200, offset: int = 0,
+                     filters: dict | None = None) -> list[dict]:
+    sql = "SELECT * FROM audit_log"
+    where, params = _build_where(filters, {
+        "event_type": "event_type = ?",
+        "severity": "severity = ?",
+        "username": "username = ?",
+        "from_ts": "ts >= ?",
+        "to_ts": "ts <= ?",
+        "action": "action = ?",
+        "search": "(detail LIKE ? OR details_json LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = get_conn().execute(sql, params).fetchall()
+    return dict_rows(rows)
+
+
+def count_audit_log(filters: dict | None = None) -> int:
+    sql = "SELECT COUNT(*) AS c FROM audit_log"
+    where, params = _build_where(filters, {
+        "event_type": "event_type = ?",
+        "severity": "severity = ?",
+        "username": "username = ?",
+        "from_ts": "ts >= ?",
+        "to_ts": "ts <= ?",
+        "action": "action = ?",
+        "search": "(detail LIKE ? OR details_json LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    return get_conn().execute(sql, params).fetchone()["c"]
+
+
+# ---------------------------------------------------------------------------
+# Remote session helpers (Phase 6)
+# ---------------------------------------------------------------------------
+
+def insert_session(*, method: str, source_ip: str, auth_result: str = "success",
+                   timestamp_start: str = "", timestamp_end: str = "",
+                   interface: str = "", source_mac: str = "", source_hostname: str = "",
+                   username: str = "", auth_method: str = "", session_type: str = "",
+                   key_fingerprint: str = "", geo_ip: str = "", asn: str = "",
+                   process_name: str = "", process_pid: int | None = None) -> int:
+    conn = get_conn()
+    now = _now()
+    ts = timestamp_start or now
+    cur = conn.execute(
+        "INSERT INTO remote_sessions "
+        "(timestamp_start, timestamp_end, method, interface, source_ip, source_mac, "
+        " source_hostname, username, auth_method, auth_result, session_type, "
+        " key_fingerprint, geo_ip, asn, process_name, process_pid, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (ts, timestamp_end or None, method, interface, source_ip, source_mac,
+         source_hostname, username, auth_method, auth_result, session_type,
+         key_fingerprint, geo_ip, asn, process_name, process_pid, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_session_end(session_id: int, timestamp_end: str = "") -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE remote_sessions SET timestamp_end = ? WHERE id = ?",
+        (timestamp_end or _now(), session_id),
+    )
+    conn.commit()
+    return True
+
+
+def get_session(session_id: int) -> dict | None:
+    row = get_conn().execute(
+        "SELECT * FROM remote_sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    return dict_row(row)
+
+
+def get_sessions(limit: int = 200, offset: int = 0,
+                 filters: dict | None = None) -> list[dict]:
+    sql = "SELECT * FROM remote_sessions"
+    where, params = _build_where(filters, {
+        "method": "method = ?",
+        "source_ip": "source_ip = ?",
+        "auth_result": "auth_result = ?",
+        "username": "username = ?",
+        "from_ts": "timestamp_start >= ?",
+        "to_ts": "timestamp_start <= ?",
+        "interface": "interface = ?",
+        "search": "(source_ip LIKE ? OR source_hostname LIKE ? OR username LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = get_conn().execute(sql, params).fetchall()
+    return dict_rows(rows)
+
+
+def count_sessions(filters: dict | None = None) -> int:
+    sql = "SELECT COUNT(*) AS c FROM remote_sessions"
+    where, params = _build_where(filters, {
+        "method": "method = ?",
+        "source_ip": "source_ip = ?",
+        "auth_result": "auth_result = ?",
+        "username": "username = ?",
+        "from_ts": "timestamp_start >= ?",
+        "to_ts": "timestamp_start <= ?",
+        "interface": "interface = ?",
+        "search": "(source_ip LIKE ? OR source_hostname LIKE ? OR username LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    return get_conn().execute(sql, params).fetchone()["c"]
+
+
+# ---------------------------------------------------------------------------
+# Service port helpers (Phase 6)
+# ---------------------------------------------------------------------------
+
+def upsert_service_port(port: int, protocol: str, bind_address: str, *,
+                        service_name: str = "", process_name: str = "",
+                        process_user: str = "", process_binary: str = "",
+                        binary_hash: str = "", arsenal_tool_match: str = "",
+                        firewall_allowed: int | None = None) -> int:
+    conn = get_conn()
+    now = _now()
+    existing = conn.execute(
+        "SELECT id, is_open FROM service_ports "
+        "WHERE port = ? AND protocol = ? AND bind_address = ? AND is_open = 1",
+        (port, protocol, bind_address),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE service_ports SET last_seen = ?, service_name = ?, "
+            "process_name = ?, process_user = ?, process_binary = ?, "
+            "binary_hash = ?, arsenal_tool_match = ?, firewall_allowed = ? "
+            "WHERE id = ?",
+            (now, service_name, process_name, process_user, process_binary,
+             binary_hash, arsenal_tool_match, firewall_allowed, existing["id"]),
+        )
+        conn.commit()
+        return existing["id"]
+    cur = conn.execute(
+        "INSERT INTO service_ports "
+        "(port, protocol, bind_address, service_name, process_name, process_user, "
+        " process_binary, binary_hash, first_seen, last_seen, is_open, "
+        " arsenal_tool_match, firewall_allowed, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+        (port, protocol, bind_address, service_name, process_name, process_user,
+         process_binary, binary_hash, now, now, arsenal_tool_match,
+         firewall_allowed, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def close_service_port(port_id: int) -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE service_ports SET is_open = 0, last_seen = ? WHERE id = ?",
+        (_now(), port_id),
+    )
+    conn.commit()
+    return True
+
+
+def get_service_port(port_id: int) -> dict | None:
+    row = get_conn().execute(
+        "SELECT * FROM service_ports WHERE id = ?", (port_id,)
+    ).fetchone()
+    return dict_row(row)
+
+
+def get_service_ports(limit: int = 500, offset: int = 0,
+                      filters: dict | None = None) -> list[dict]:
+    sql = "SELECT * FROM service_ports"
+    where, params = _build_where(filters, {
+        "port": "port = ?",
+        "protocol": "protocol = ?",
+        "is_open": "is_open = ?",
+        "whitelisted": "whitelisted = ?",
+        "from_ts": "first_seen >= ?",
+        "to_ts": "first_seen <= ?",
+        "search": "(service_name LIKE ? OR process_name LIKE ? OR bind_address LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY is_open DESC, last_seen DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = get_conn().execute(sql, params).fetchall()
+    return dict_rows(rows)
+
+
+def count_service_ports(filters: dict | None = None) -> int:
+    sql = "SELECT COUNT(*) AS c FROM service_ports"
+    where, params = _build_where(filters, {
+        "port": "port = ?",
+        "protocol": "protocol = ?",
+        "is_open": "is_open = ?",
+        "whitelisted": "whitelisted = ?",
+        "from_ts": "first_seen >= ?",
+        "to_ts": "first_seen <= ?",
+        "search": "(service_name LIKE ? OR process_name LIKE ? OR bind_address LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    return get_conn().execute(sql, params).fetchone()["c"]
+
+
+def get_open_service_ports() -> list[dict]:
+    rows = get_conn().execute(
+        "SELECT * FROM service_ports WHERE is_open = 1 ORDER BY port"
+    ).fetchall()
+    return dict_rows(rows)
+
+
+def whitelist_port(port_id: int, by: str, reason: str) -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE service_ports SET whitelisted = 1, whitelisted_by = ?, "
+        "whitelisted_at = ?, whitelisted_reason = ? WHERE id = ?",
+        (by, _now(), reason, port_id),
+    )
+    conn.commit()
+    return True
+
+
+def unwhitelist_port(port_id: int) -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE service_ports SET whitelisted = 0, whitelisted_by = '', "
+        "whitelisted_at = '', whitelisted_reason = '' WHERE id = ?",
+        (port_id,),
+    )
+    conn.commit()
+    return True
+
+
+def update_service_port_seen(port_id: int, ts: str = "") -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE service_ports SET last_seen = ? WHERE id = ?",
+        (ts or _now(), port_id),
+    )
+    conn.commit()
+    return True
+
+
+def get_service_port_hash(port_id: int) -> str:
+    row = get_conn().execute(
+        "SELECT binary_hash FROM service_ports WHERE id = ?", (port_id,)
+    ).fetchone()
+    return row["binary_hash"] if row else ""
+
+
+def update_service_port_hash(port_id: int, binary_hash: str) -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE service_ports SET binary_hash = ? WHERE id = ?",
+        (binary_hash, port_id),
+    )
+    conn.commit()
+    return True
+
+
+def is_service_port_whitelisted(port_id: int) -> bool:
+    row = get_conn().execute(
+        "SELECT whitelisted FROM service_ports WHERE id = ?", (port_id,)
+    ).fetchone()
+    return bool(row and row["whitelisted"])
+
+
+def update_port_notes(port_id: int, notes: str) -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE service_ports SET notes = ? WHERE id = ?",
+        (notes, port_id),
+    )
+    conn.commit()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Node history helpers (Phase 6)
+# ---------------------------------------------------------------------------
+
+def insert_node_event(node_id: str, event_type: str,
+                      old_value: str = "", new_value: str = "",
+                      details: str = "") -> int:
+    conn = get_conn()
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO node_history "
+        "(node_id, timestamp, event_type, old_value, new_value, details, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (str(node_id), now, event_type, old_value, new_value, details, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_node_history(node_id: str, limit: int = 200, offset: int = 0,
+                     filters: dict | None = None) -> list[dict]:
+    base_filters = dict(filters) if filters else {}
+    base_filters["node_id"] = str(node_id)
+    return get_all_node_history(limit, offset, base_filters)
+
+
+def get_all_node_history(limit: int = 200, offset: int = 0,
+                         filters: dict | None = None) -> list[dict]:
+    sql = "SELECT * FROM node_history"
+    where, params = _build_where(filters, {
+        "node_id": "node_id = ?",
+        "event_type": "event_type = ?",
+        "from_ts": "timestamp >= ?",
+        "to_ts": "timestamp <= ?",
+        "search": "(old_value LIKE ? OR new_value LIKE ? OR details LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = get_conn().execute(sql, params).fetchall()
+    return dict_rows(rows)
+
+
+def count_node_history(filters: dict | None = None) -> int:
+    sql = "SELECT COUNT(*) AS c FROM node_history"
+    where, params = _build_where(filters, {
+        "node_id": "node_id = ?",
+        "event_type": "event_type = ?",
+        "from_ts": "timestamp >= ?",
+        "to_ts": "timestamp <= ?",
+        "search": "(old_value LIKE ? OR new_value LIKE ? OR details LIKE ?)",
+    })
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    return get_conn().execute(sql, params).fetchone()["c"]
 
 
 # ---------------------------------------------------------------------------
@@ -983,6 +1424,67 @@ def fleet_stats() -> dict:
         "tools": tools,
         "tunnels": tunnels,
     }
+
+
+def audit_stats() -> dict:
+    conn = get_conn()
+    sessions_total = conn.execute("SELECT COUNT(*) AS c FROM remote_sessions").fetchone()["c"]
+    sessions_active = conn.execute(
+        "SELECT COUNT(*) AS c FROM remote_sessions WHERE timestamp_end IS NULL OR timestamp_end = ''"
+    ).fetchone()["c"]
+    sessions_failed = conn.execute(
+        "SELECT COUNT(*) AS c FROM remote_sessions WHERE auth_result != 'success'"
+    ).fetchone()["c"]
+    ports_open = conn.execute(
+        "SELECT COUNT(*) AS c FROM service_ports WHERE is_open = 1"
+    ).fetchone()["c"]
+    ports_whitelisted = conn.execute(
+        "SELECT COUNT(*) AS c FROM service_ports WHERE whitelisted = 1"
+    ).fetchone()["c"]
+    ports_unexpected = conn.execute(
+        "SELECT COUNT(*) AS c FROM service_ports WHERE is_open = 1 AND whitelisted = 0 "
+        "AND arsenal_tool_match = ''"
+    ).fetchone()["c"]
+    audit_entries = conn.execute("SELECT COUNT(*) AS c FROM audit_log").fetchone()["c"]
+    node_events = conn.execute("SELECT COUNT(*) AS c FROM node_history").fetchone()["c"]
+    return {
+        "sessions_total": sessions_total,
+        "sessions_active": sessions_active,
+        "sessions_failed": sessions_failed,
+        "ports_open": ports_open,
+        "ports_whitelisted": ports_whitelisted,
+        "ports_unexpected": ports_unexpected,
+        "audit_entries": audit_entries,
+        "node_events": node_events,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Internal filter builder
+# ---------------------------------------------------------------------------
+
+def _build_where(filters: dict | None,
+                 field_map: dict[str, str]) -> tuple[list[str], list]:
+    where: list[str] = []
+    params: list = []
+    if not filters:
+        return where, params
+    for key, clause in field_map.items():
+        val = filters.get(key)
+        if val is None or val == "":
+            continue
+        if key == "search":
+            pat = f"%{val}%"
+            n_placeholders = clause.count("?")
+            where.append(clause)
+            params.extend([pat] * n_placeholders)
+        elif key in ("is_open", "whitelisted", "firewall_allowed"):
+            where.append(clause)
+            params.append(int(val))
+        else:
+            where.append(clause)
+            params.append(val)
+    return where, params
 
 
 # ---------------------------------------------------------------------------

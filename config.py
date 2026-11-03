@@ -1,4 +1,4 @@
-"""Nexus v2.4 — Application configuration."""
+"""Nexus v2.5 — Application configuration."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,8 +19,8 @@ TOOL_REGISTRY = [
      "desc": "Wireless Assessment",         "status_api": True,  "icon": "wave"},
     {"id": "nexus",      "name": "Nexus",      "port": 6000, "proto": "https",
      "desc": "Fleet Management Hub",        "status_api": True,  "icon": "nexus"},
-    {"id": "crucible",   "name": "Crucible",   "port": 5500, "proto": "https",
-     "desc": "Web & API Assessment",        "status_api": True,  "icon": "crucible"},
+    {"id": "crucible",   "name": "Crucible",   "port": 5100, "proto": "https",
+     "desc": "Pentest Orchestration",       "status_api": True,  "icon": "crucible"},
     {"id": "nessus",     "name": "Nessus",     "port": 8834, "proto": "https",
      "desc": "Vulnerability Scanner",       "status_api": False, "icon": "scan"},
     {"id": "hitman",     "name": "HiTMan",     "port": 8443, "proto": "https",
@@ -184,3 +184,23 @@ OS_FAMILIES = ("linux", "darwin", "windows", "freebsd", "unknown")
 
 # Architecture enum values
 ARCHITECTURES = ("x86_64", "aarch64", "armv7l", "i686", "riscv64", "unknown")
+
+# Retention defaults (days) — Phase 6
+RETENTION_SESSIONS_DAYS = 365
+RETENTION_PORTS_DAYS = 1095
+RETENTION_AUDIT_DAYS = 90
+RETENTION_NODE_HISTORY_DAYS = 1095
+
+# Monitoring intervals (seconds) — Phase 6
+SESSION_MONITOR_INTERVAL = 30
+PORT_MONITOR_INTERVAL = 60
+
+# Audit event types — Phase 6
+AUDIT_EVENT_TYPES = (
+    "auth", "config", "fleet", "fabric", "tool",
+    "credential", "tunnel", "arsenal", "enrollment",
+    "dispatch", "session", "port", "system",
+)
+
+# Audit severity levels — Phase 6
+AUDIT_SEVERITIES = ("debug", "info", "warning", "error", "critical")
