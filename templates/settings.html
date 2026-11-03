@@ -63,7 +63,7 @@
   <div class="card card-wide">
     <div class="card-header">
       Network Fabrics
-      <button class="btn btn-sm btn-accent" onclick="NX.addFabric()" style="margin-left:auto">Add Network</button>
+      <button class="btn btn-sm btn-accent" onclick="NX.openFabricWizard()" style="margin-left:auto">Add Network</button>
     </div>
     <div class="card-body" id="fabricList">
       <div class="empty-state-inline">No fabrics configured. Add a network to begin fleet discovery.</div>
@@ -78,6 +78,23 @@
         <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
         <tbody id="auditBody"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Add Network Wizard Modal ═══ -->
+<div class="modal-overlay" id="fabricWizard">
+  <div class="modal-dialog" style="width:560px">
+    <div class="modal-header">
+      <h3 id="wizardTitle">Add Network</h3>
+      <button class="modal-close" onclick="NX.closeFabricWizard()">&times;</button>
+    </div>
+    <div class="modal-body" id="wizardBody">
+      <!-- Step 1: Type selector (rendered by JS) -->
+    </div>
+    <div class="modal-footer" id="wizardFooter">
+      <button class="btn btn-muted" onclick="NX.closeFabricWizard()">Cancel</button>
+      <button class="btn btn-accent" id="wizardNext" onclick="NX.wizardNext()">Next</button>
     </div>
   </div>
 </div>

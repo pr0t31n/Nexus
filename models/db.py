@@ -1,16 +1,16 @@
-"""Nexus v2.0 — Database schema and connection management."""
+"""Nexus v2.1 — Database schema and connection management."""
 from __future__ import annotations
 
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 _DB_PATH: Path | None = None
 _local = threading.local()
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def init_db(db_path: Path) -> None:
@@ -21,6 +21,7 @@ def init_db(db_path: Path) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     _create_tables(conn)
+    _migrate(conn)
     _seed_defaults(conn)
     conn.commit()
 
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS fleet_nodes (
     arch            TEXT DEFAULT '',
     device_type     TEXT DEFAULT 'unknown',
     role            TEXT DEFAULT '',
+    vm_role         TEXT,
     ip_primary      TEXT,
     last_seen       TEXT,
     status          TEXT DEFAULT 'offline',
@@ -82,6 +84,7 @@ CREATE TABLE IF NOT EXISTS network_fabrics (
     fabric_type     TEXT NOT NULL,
     subnets         TEXT DEFAULT '[]',
     config          TEXT DEFAULT '{}',
+    config_enc      TEXT DEFAULT '',
     priority        INTEGER DEFAULT 100,
     enabled         INTEGER DEFAULT 1,
     status          TEXT DEFAULT 'unknown',
@@ -195,6 +198,18 @@ CREATE INDEX IF NOT EXISTS idx_tunnel_node       ON tunnels(node_id);
 
 def _create_tables(conn: sqlite3.Connection) -> None:
     conn.executescript(_TABLES)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for col, tbl, default in [
+        ("vm_role", "fleet_nodes", None),
+        ("config_enc", "network_fabrics", "''"),
+    ]:
+        try:
+            defstr = f" DEFAULT {default}" if default is not None else ""
+            conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT{defstr}")
+        except sqlite3.OperationalError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +340,69 @@ def get_fleet_node(node_id: int) -> dict | None:
     return dict_row(row)
 
 
+def update_fleet_node(node_id: int, **kwargs) -> bool:
+    conn = get_conn()
+    if not kwargs:
+        return False
+    existing = conn.execute(
+        "SELECT id FROM fleet_nodes WHERE id = ?", (node_id,)
+    ).fetchone()
+    if not existing:
+        return False
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [_now(), node_id]
+    conn.execute(
+        f"UPDATE fleet_nodes SET {sets}, updated_at = ? WHERE id = ?", vals
+    )
+    conn.commit()
+    return True
+
+
+def delete_fleet_node(node_id: int) -> bool:
+    conn = get_conn()
+    conn.execute("DELETE FROM fleet_nodes WHERE id = ?", (node_id,))
+    conn.commit()
+    return True
+
+
+def search_fleet_nodes(search: str = "", status: str = "",
+                       fabric_id: int = 0, role: str = "") -> list[dict]:
+    conn = get_conn()
+    sql = "SELECT DISTINCT fn.* FROM fleet_nodes fn"
+    joins = []
+    where = []
+    params: list = []
+
+    if fabric_id:
+        joins.append(
+            "JOIN node_network_addresses na ON na.node_id = fn.id"
+        )
+        where.append("na.fabric_id = ?")
+        params.append(fabric_id)
+
+    if search:
+        where.append("(fn.hostname LIKE ? OR fn.display_name LIKE ? OR fn.ip_primary LIKE ?)")
+        pat = f"%{search}%"
+        params.extend([pat, pat, pat])
+
+    if status:
+        where.append("fn.status = ?")
+        params.append(status)
+
+    if role:
+        where.append("fn.role = ?")
+        params.append(role)
+
+    if joins:
+        sql += " " + " ".join(joins)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fn.hostname"
+
+    rows = conn.execute(sql, params).fetchall()
+    return dict_rows(rows)
+
+
 # ---------------------------------------------------------------------------
 # Tool instance helpers
 # ---------------------------------------------------------------------------
@@ -375,6 +453,32 @@ def get_tool_instances(node_id: int | None = None) -> list[dict]:
     return dict_rows(rows)
 
 
+def mark_stale_tools_offline(threshold_cycles: int, scan_interval_s: int) -> int:
+    conn = get_conn()
+    cutoff_seconds = threshold_cycles * scan_interval_s
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=cutoff_seconds)).isoformat()
+    cur = conn.execute(
+        "UPDATE tool_instances SET status = 'offline' "
+        "WHERE status = 'online' AND last_seen < ?",
+        (cutoff,),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def mark_stale_nodes_offline() -> int:
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE fleet_nodes SET status = 'offline', updated_at = ? "
+        "WHERE status = 'online' AND id NOT IN ("
+        "  SELECT DISTINCT node_id FROM tool_instances WHERE status = 'online'"
+        ")",
+        (_now(),),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 # ---------------------------------------------------------------------------
 # Network fabric helpers
 # ---------------------------------------------------------------------------
@@ -411,6 +515,59 @@ def get_fabric(fabric_id: int) -> dict | None:
         "SELECT * FROM network_fabrics WHERE id = ?", (fabric_id,)
     ).fetchone()
     return dict_row(row)
+
+
+def update_fabric(fabric_id: int, **kwargs) -> bool:
+    conn = get_conn()
+    if not kwargs:
+        return False
+    existing = conn.execute(
+        "SELECT id FROM network_fabrics WHERE id = ?", (fabric_id,)
+    ).fetchone()
+    if not existing:
+        return False
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [_now(), fabric_id]
+    conn.execute(
+        f"UPDATE network_fabrics SET {sets}, updated_at = ? WHERE id = ?", vals
+    )
+    conn.commit()
+    return True
+
+
+def delete_fabric(fabric_id: int) -> bool:
+    conn = get_conn()
+    conn.execute("DELETE FROM node_network_addresses WHERE fabric_id = ?", (fabric_id,))
+    conn.execute("DELETE FROM network_fabrics WHERE id = ?", (fabric_id,))
+    conn.commit()
+    return True
+
+
+def toggle_fabric(fabric_id: int, enabled: bool) -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE network_fabrics SET enabled = ?, updated_at = ? WHERE id = ?",
+        (1 if enabled else 0, _now(), fabric_id),
+    )
+    conn.commit()
+    return True
+
+
+def get_fabric_node_count(fabric_id: int) -> int:
+    row = get_conn().execute(
+        "SELECT COUNT(DISTINCT node_id) AS c FROM node_network_addresses WHERE fabric_id = ?",
+        (fabric_id,),
+    ).fetchone()
+    return row["c"] if row else 0
+
+
+def delete_node_addresses_for_fabric(fabric_id: int) -> int:
+    conn = get_conn()
+    cur = conn.execute(
+        "DELETE FROM node_network_addresses WHERE fabric_id = ?", (fabric_id,)
+    )
+    conn.commit()
+    return cur.rowcount
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +608,16 @@ def get_node_addresses(node_id: int) -> list[dict]:
         (node_id,),
     ).fetchall()
     return dict_rows(rows)
+
+
+def update_node_address_lane(node_id: int, fabric_id: int, lane_status: str) -> None:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE node_network_addresses SET lane_status = ?, last_seen = ? "
+        "WHERE node_id = ? AND fabric_id = ?",
+        (lane_status, _now(), node_id, fabric_id),
+    )
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------

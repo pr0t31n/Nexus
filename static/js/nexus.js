@@ -1,16 +1,23 @@
-/* Nexus v2.0 — Client-side JavaScript
- * Fleet management, palette engine, socket.io, session timeout.
+/* Nexus v2.1 — Client-side JavaScript
+ * Fleet management, fabric wizard, palette engine, socket.io, session timeout.
  */
 (function () {
   'use strict';
 
   var _socket = null;
-  var _fleetData = { nodes: [], stats: {}, last_scan: null };
+  var _fleetData = { nodes: [], stats: {}, last_scan: null, fabrics: [] };
   var _expandedNode = null;
   var _statusFilter = '';
+  var _fabricFilter = '';
   var _sessionTimer = null;
   var _countdownTimer = null;
   var _lastActivity = Date.now();
+
+  // Wizard state
+  var _wizardStep = 0;
+  var _wizardTypes = [];
+  var _wizardSelectedType = '';
+  var _wizardConfig = {};
 
   var PALETTES = [
     { id: 'resume',   label: 'Resume'   },
@@ -64,6 +71,12 @@
     return '<span class="' + cls + '"></span>';
   }
 
+  function _laneDot(status) {
+    if (status === 'up') return '<span class="lane-dot lane-up"></span>';
+    if (status === 'down') return '<span class="lane-dot lane-down"></span>';
+    return '<span class="lane-dot lane-unknown"></span>';
+  }
+
   function _osBadge(os) {
     if (!os) return '';
     var label = os;
@@ -95,7 +108,6 @@
     });
 
     var toggle = _$('themeToggle');
-    var label = _$('modeLabel');
     if (!toggle) return;
     try {
       var m = localStorage.getItem('nexus-mode');
@@ -127,6 +139,18 @@
       _fleetData = data;
       _renderFleet();
     });
+    _socket.on('fabric_health', function (data) {
+      if (!data) return;
+      var fabrics = _fleetData.fabrics || [];
+      for (var i = 0; i < fabrics.length; i++) {
+        if (fabrics[i].id === data.fabric_id) {
+          fabrics[i].status = data.status;
+          fabrics[i].health_detail = data.detail;
+          break;
+        }
+      }
+      _renderNetworksSidebar();
+    });
   }
 
   // ── Fleet Rendering ────────────────────────────────────────────────
@@ -134,6 +158,7 @@
   function _renderFleet() {
     _updateStats();
     _updateLastScan();
+    _updateBadge();
     _renderGrid();
     _renderNetworksSidebar();
   }
@@ -157,6 +182,11 @@
   function _updateLastScan() {
     var el = _$('lastScan');
     if (el) el.textContent = 'Last scan: ' + _relTime(_fleetData.last_scan);
+  }
+
+  function _updateBadge() {
+    var badge = _$('badgeFleet');
+    if (badge) badge.textContent = (_fleetData.stats || {}).online || 0;
   }
 
   function _renderGrid() {
@@ -204,17 +234,29 @@
       toolChips +=
         '<span class="chip chip-tool' + scanCls + '">' +
           _statusDot(tool.status) +
-          _esc(tool.tool_id) + ver +
+          _esc(tool.tool_name || tool.tool_id) + ver +
         '</span>';
     }
 
-    var addrTags = '';
+    // Fabric lane indicators
+    var laneHtml = '';
     if (addrs.length) {
       for (var a = 0; a < addrs.length; a++) {
         var addr = addrs[a];
-        var laneCls = addr.lane_status === 'up' ? 'badge-up' : 'badge-down';
-        addrTags += '<span class="badge ' + laneCls + '">' + _esc(addr.ip) + '</span>';
+        var fabName = addr.fabric_name || ('Fabric ' + (addr.fabric_id || '?'));
+        laneHtml +=
+          '<span class="lane-tag">' +
+            _laneDot(addr.lane_status) +
+            '<span class="lane-name">' + _esc(fabName) + '</span>' +
+            '<span class="lane-ip">' + _esc(addr.address) + '</span>' +
+          '</span>';
       }
+    }
+
+    // Role badge
+    var roleBadge = '';
+    if (node.role) {
+      roleBadge = '<span class="badge badge-role">' + _esc(node.role) + '</span>';
     }
 
     var detail = '';
@@ -227,17 +269,18 @@
         '<div class="node-card-header" data-node-id="' + node.id + '">' +
           '<div class="node-card-left">' +
             _statusDot(node.status) +
-            '<strong class="node-hostname">' + _esc(node.hostname) + '</strong>' +
+            '<strong class="node-hostname">' + _esc(node.display_name || node.hostname) + '</strong>' +
             '<span class="node-ip">' + _esc(node.ip_primary) + '</span>' +
             _osBadge(node.os_family) +
+            roleBadge +
           '</div>' +
           '<div class="node-card-right">' +
             '<span class="node-tool-count">' + tools.length + ' tool' + (tools.length !== 1 ? 's' : '') + '</span>' +
             '<span class="node-expand-icon">' + (expanded ? '&#9650;' : '&#9660;') + '</span>' +
           '</div>' +
         '</div>' +
+        (laneHtml ? '<div class="node-card-lanes">' + laneHtml + '</div>' : '') +
         '<div class="node-card-tools">' + toolChips + '</div>' +
-        (addrTags ? '<div class="node-card-addrs">' + addrTags + '</div>' : '') +
         detail +
       '</div>'
     );
@@ -252,7 +295,7 @@
       var tool = tools[t];
       toolRows +=
         '<tr>' +
-          '<td>' + _statusDot(tool.status) + ' ' + _esc(tool.tool_id) + '</td>' +
+          '<td>' + _statusDot(tool.status) + ' ' + _esc(tool.tool_name || tool.tool_id) + '</td>' +
           '<td>' + (tool.version ? _esc(tool.version) : '-') + '</td>' +
           '<td>' + _esc(tool.proto || '') + '://' + _esc(node.ip_primary) + ':' + (tool.port || '') + '</td>' +
           '<td>' + _esc(tool.status) + (tool.scanning ? ' (scanning)' : '') + '</td>' +
@@ -267,16 +310,19 @@
     var addrRows = '';
     for (var a = 0; a < addrs.length; a++) {
       var addr = addrs[a];
+      var fabName = addr.fabric_name || ('Fabric ' + (addr.fabric_id || '?'));
       addrRows +=
         '<tr>' +
-          '<td>' + _esc(addr.ip) + '</td>' +
-          '<td>' + _esc(addr.fabric_id || '-') + '</td>' +
-          '<td>' + _esc(addr.lane_status || '-') + '</td>' +
+          '<td>' + _esc(addr.address) + '</td>' +
+          '<td>' + _esc(fabName) + '</td>' +
+          '<td>' + _esc(addr.fabric_type || '-') + '</td>' +
+          '<td>' + _laneDot(addr.lane_status) + ' ' + _esc(addr.lane_status || 'unknown') + '</td>' +
+          '<td>' + _relTime(addr.last_seen) + '</td>' +
         '</tr>';
     }
 
     var installedIds = {};
-    for (var i = 0; i < tools.length; i++) installedIds[tools[i].tool_id] = true;
+    for (var i = 0; i < tools.length; i++) installedIds[tools[i].tool_name || tools[i].tool_id] = true;
 
     var REGISTRY = [
       'gauntlet','vantage','quiver','spectre','crucible','nessus','hitman'
@@ -301,7 +347,7 @@
         (addrRows
           ? '<h4>Network Addresses</h4>' +
             '<table class="tbl">' +
-              '<thead><tr><th>IP</th><th>Fabric</th><th>Lane</th></tr></thead>' +
+              '<thead><tr><th>Address</th><th>Fabric</th><th>Type</th><th>Lane</th><th>Last Seen</th></tr></thead>' +
               '<tbody>' + addrRows + '</tbody>' +
             '</table>'
           : '') +
@@ -337,14 +383,37 @@
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       if (_statusFilter && n.status !== _statusFilter) continue;
+
+      // Fabric filter
+      if (_fabricFilter) {
+        var onFab = false;
+        var addrs = n.addresses || [];
+        for (var a = 0; a < addrs.length; a++) {
+          if (String(addrs[a].fabric_id) === _fabricFilter ||
+              (addrs[a].fabric_name || '').toLowerCase() === _fabricFilter.toLowerCase()) {
+            onFab = true;
+            break;
+          }
+        }
+        if (!onFab) continue;
+      }
+
       if (q) {
         var match = false;
         if ((n.hostname || '').toLowerCase().indexOf(q) !== -1) match = true;
+        if ((n.display_name || '').toLowerCase().indexOf(q) !== -1) match = true;
         if ((n.ip_primary || '').indexOf(q) !== -1) match = true;
         if (!match) {
           var tools = n.tools || [];
           for (var t = 0; t < tools.length; t++) {
-            if ((tools[t].tool_id || '').toLowerCase().indexOf(q) !== -1) { match = true; break; }
+            if ((tools[t].tool_name || tools[t].tool_id || '').toLowerCase().indexOf(q) !== -1) { match = true; break; }
+          }
+        }
+        if (!match) {
+          var addresses = n.addresses || [];
+          for (var b = 0; b < addresses.length; b++) {
+            if ((addresses[b].fabric_name || '').toLowerCase().indexOf(q) !== -1) { match = true; break; }
+            if ((addresses[b].address || '').indexOf(q) !== -1) { match = true; break; }
           }
         }
         if (!match) continue;
@@ -357,33 +426,24 @@
   function _renderNetworksSidebar() {
     var el = _$('networkList');
     if (!el) return;
-    var nodes = _fleetData.nodes || [];
-    var fabricMap = {};
-    for (var i = 0; i < nodes.length; i++) {
-      var addrs = nodes[i].addresses || [];
-      for (var a = 0; a < addrs.length; a++) {
-        var fid = addrs[a].fabric_id || 'local';
-        if (!fabricMap[fid]) fabricMap[fid] = { up: 0, down: 0 };
-        if (addrs[a].lane_status === 'up') fabricMap[fid].up++;
-        else fabricMap[fid].down++;
-      }
-    }
+    var fabrics = _fleetData.fabrics || [];
 
-    var keys = Object.keys(fabricMap);
-    if (!keys.length) {
+    if (!fabrics.length) {
       el.innerHTML = '<span class="sidebar-empty">No fabrics configured</span>';
       return;
     }
     var html = '';
-    for (var k = 0; k < keys.length; k++) {
-      var f = fabricMap[keys[k]];
+    for (var i = 0; i < fabrics.length; i++) {
+      var f = fabrics[i];
+      var dotCls = 'net-dot';
+      if (f.status === 'healthy') dotCls += ' up';
+      else if (f.status === 'degraded') dotCls += ' warn';
+      else if (f.status === 'down') dotCls += ' down';
       html +=
-        '<div class="sidebar-network-item">' +
-          '<span class="sidebar-network-name">' + _esc(keys[k]) + '</span>' +
-          '<span class="sidebar-network-stat">' +
-            '<span class="dot dot-online"></span>' + f.up +
-            (f.down ? ' <span class="dot dot-offline"></span>' + f.down : '') +
-          '</span>' +
+        '<div class="net-item" data-fid="' + f.id + '">' +
+          '<span class="' + dotCls + '"></span>' +
+          '<span class="net-name">' + _esc(f.name) + '</span>' +
+          '<span class="net-count">' + (f.node_count || 0) + '</span>' +
         '</div>';
     }
     el.innerHTML = html;
@@ -394,12 +454,14 @@
   function _initFilters() {
     var chipBox = _$('filterChips');
     if (!chipBox) return;
+
     var statuses = ['online', 'offline', 'scanning'];
     var html = '';
     for (var i = 0; i < statuses.length; i++) {
       html += '<button class="chip chip-filter" data-status="' + statuses[i] + '">' + statuses[i] + '</button>';
     }
     chipBox.innerHTML = html;
+
     var chips = chipBox.querySelectorAll('.chip-filter');
     for (var j = 0; j < chips.length; j++) {
       chips[j].addEventListener('click', function () {
@@ -470,7 +532,7 @@
         var e = entries[i];
         html +=
           '<tr>' +
-            '<td style="white-space:nowrap;font-size:0.78rem">' + _esc(e.timestamp || '') + '</td>' +
+            '<td style="white-space:nowrap;font-size:0.78rem">' + _esc(e.timestamp || e.ts || '') + '</td>' +
             '<td>' + _esc(e.username || '') + '</td>' +
             '<td>' + _esc(e.action || '') + '</td>' +
             '<td style="font-size:0.78rem">' + _esc(e.detail || '') + '</td>' +
@@ -496,65 +558,282 @@
         var f = fabrics[i];
         var subnets = '';
         try { subnets = JSON.parse(f.subnets || '[]').join(', '); } catch (e) { subnets = f.subnets || ''; }
+        var statusCls = f.status === 'healthy' ? 'badge-up' : (f.status === 'down' ? 'badge-down' : 'badge-os');
         html +=
           '<div class="fabric-row" data-fabric-id="' + f.id + '">' +
             '<div class="fabric-info">' +
               '<strong>' + _esc(f.name) + '</strong>' +
-              '<span class="badge badge-os">' + _esc(f.type || '') + '</span>' +
-              (f.enabled ? '<span class="badge badge-up">enabled</span>' : '<span class="badge badge-down">disabled</span>') +
+              '<span class="badge badge-os">' + _esc(f.fabric_type || '') + '</span>' +
+              '<span class="badge ' + statusCls + '">' + _esc(f.status || 'unknown') + '</span>' +
+              (f.enabled ? '' : '<span class="badge badge-down">disabled</span>') +
               '<span class="fabric-subnets">' + _esc(subnets) + '</span>' +
             '</div>' +
             '<div class="fabric-actions">' +
+              '<button class="btn btn-xs btn-muted btn-fabric-toggle" data-fid="' + f.id + '" data-enabled="' + (f.enabled ? '1' : '0') + '">' +
+                (f.enabled ? 'Disable' : 'Enable') +
+              '</button>' +
+              '<button class="btn btn-xs btn-muted btn-fabric-health" data-fid="' + f.id + '">Health</button>' +
               '<button class="btn btn-xs btn-danger btn-fabric-del" data-fid="' + f.id + '">Delete</button>' +
             '</div>' +
           '</div>';
       }
       el.innerHTML = html;
 
-      var delBtns = el.querySelectorAll('.btn-fabric-del');
-      for (var j = 0; j < delBtns.length; j++) {
-        delBtns[j].addEventListener('click', function () {
+      el.querySelectorAll('.btn-fabric-del').forEach(function (btn) {
+        btn.addEventListener('click', function () {
           var fid = this.getAttribute('data-fid');
+          if (!confirm('Delete this fabric? Node addresses on it will be removed.')) return;
           _json('/api/fabrics/' + fid, { method: 'DELETE' }).then(function () { _loadFabrics(); });
         });
-      }
+      });
+
+      el.querySelectorAll('.btn-fabric-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var fid = this.getAttribute('data-fid');
+          _json('/api/fabrics/' + fid + '/toggle', { method: 'POST' }).then(function () { _loadFabrics(); });
+        });
+      });
+
+      el.querySelectorAll('.btn-fabric-health').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var fid = this.getAttribute('data-fid');
+          this.textContent = '...';
+          var self = this;
+          _json('/api/fabrics/' + fid + '/health', { method: 'POST' }).then(function (d) {
+            self.textContent = d.status || 'done';
+            setTimeout(function () { self.textContent = 'Health'; }, 2000);
+            _loadFabrics();
+          });
+        });
+      });
     });
   }
 
-  function _addFabric() {
-    var el = _$('fabricList');
-    if (!el) return;
-    if (_$('fabricAddForm')) return;
+  // ── Fabric Wizard ──────────────────────────────────────────────────
 
-    var form = document.createElement('div');
-    form.id = 'fabricAddForm';
-    form.className = 'fabric-add-form';
-    form.innerHTML =
-      '<div class="form-row"><label>Name</label><input type="text" class="form-input" id="fabName" placeholder="e.g. Lab VPN"></div>' +
-      '<div class="form-row"><label>Type</label>' +
-        '<select class="form-input" id="fabType">' +
-          '<option value="vpn">VPN</option>' +
-          '<option value="overlay">Overlay</option>' +
-          '<option value="lan">LAN</option>' +
-          '<option value="cloud">Cloud</option>' +
-        '</select></div>' +
-      '<div class="form-row"><label>Subnets (one per line)</label><textarea class="form-input" id="fabSubnets" rows="3" placeholder="10.0.0.0/24"></textarea></div>' +
-      '<div class="form-row" style="display:flex;gap:8px">' +
-        '<button class="btn btn-sm btn-accent" id="fabSave">Save</button>' +
-        '<button class="btn btn-sm btn-muted" id="fabCancel">Cancel</button>' +
-      '</div>';
-    el.prepend(form);
-
-    _$('fabCancel').addEventListener('click', function () { form.remove(); });
-    _$('fabSave').addEventListener('click', function () {
-      var name = (_$('fabName').value || '').trim();
-      var type = _$('fabType').value;
-      var raw = (_$('fabSubnets').value || '').trim();
-      var subnets = raw.split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
-      if (!name) return;
-      _json('/api/fabrics', { method: 'POST', body: { name: name, type: type, subnets: subnets } })
-        .then(function () { form.remove(); _loadFabrics(); });
+  function _openFabricWizard() {
+    _wizardStep = 1;
+    _wizardSelectedType = '';
+    _wizardConfig = {};
+    _json('/api/fabric-types').then(function (d) {
+      _wizardTypes = d.types || [];
+      _renderWizardStep1();
+      _$('fabricWizard').classList.add('show');
     });
+  }
+
+  function _closeFabricWizard() {
+    _$('fabricWizard').classList.remove('show');
+    _wizardStep = 0;
+  }
+
+  function _renderWizardStep1() {
+    _wizardStep = 1;
+    var title = _$('wizardTitle');
+    if (title) title.textContent = 'Add Network — Choose Type';
+    var next = _$('wizardNext');
+    if (next) { next.textContent = 'Next'; next.disabled = true; }
+
+    var body = _$('wizardBody');
+    if (!body) return;
+
+    var categories = {};
+    for (var i = 0; i < _wizardTypes.length; i++) {
+      var t = _wizardTypes[i];
+      var cat = t.category || 'other';
+      if (!categories[cat]) categories[cat] = [];
+      categories[cat].push(t);
+    }
+
+    var catLabels = {
+      'vpn': 'VPN / Tunnel',
+      'overlay': 'Overlay / Mesh',
+      'cloud': 'Cloud VPC',
+      'direct': 'Direct / Local'
+    };
+    var catOrder = ['vpn', 'overlay', 'cloud', 'direct'];
+
+    var html = '<div class="wizard-type-list">';
+    for (var c = 0; c < catOrder.length; c++) {
+      var key = catOrder[c];
+      var types = categories[key];
+      if (!types || !types.length) continue;
+      html += '<div class="wizard-cat-label">' + _esc(catLabels[key] || key) + '</div>';
+      for (var j = 0; j < types.length; j++) {
+        var tp = types[j];
+        html +=
+          '<label class="wizard-type-option" data-type="' + _esc(tp.type_id) + '">' +
+            '<input type="radio" name="fabric_type" value="' + _esc(tp.type_id) + '">' +
+            '<span class="wizard-type-name">' + _esc(tp.display_name) + '</span>' +
+          '</label>';
+      }
+    }
+    html += '</div>';
+    body.innerHTML = html;
+
+    body.querySelectorAll('input[name="fabric_type"]').forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        _wizardSelectedType = this.value;
+        if (next) next.disabled = false;
+        body.querySelectorAll('.wizard-type-option').forEach(function (opt) {
+          opt.classList.toggle('selected', opt.getAttribute('data-type') === _wizardSelectedType);
+        });
+      });
+    });
+  }
+
+  function _renderWizardStep2() {
+    _wizardStep = 2;
+    var title = _$('wizardTitle');
+    var typeInfo = null;
+    for (var i = 0; i < _wizardTypes.length; i++) {
+      if (_wizardTypes[i].type_id === _wizardSelectedType) { typeInfo = _wizardTypes[i]; break; }
+    }
+    if (!typeInfo) return;
+
+    if (title) title.textContent = 'Configure: ' + (typeInfo.display_name || _wizardSelectedType);
+    var next = _$('wizardNext');
+    if (next) next.textContent = 'Test & Save';
+
+    var body = _$('wizardBody');
+    if (!body) return;
+
+    var fields = typeInfo.fields || [];
+    var html = '<div class="wizard-form">';
+
+    // Name field (always)
+    html +=
+      '<div class="wizard-field">' +
+        '<label>Name <span class="wizard-req">*</span></label>' +
+        '<input type="text" class="form-input wizard-input" data-field="name" placeholder="e.g. Primary VLAN0" style="width:100%;text-align:left">' +
+      '</div>';
+
+    // Subnets field (always)
+    html +=
+      '<div class="wizard-field">' +
+        '<label>Subnets <span class="wizard-req">*</span></label>' +
+        '<textarea class="form-input wizard-input" data-field="subnets" rows="3" ' +
+          'placeholder="One CIDR per line\ne.g. 10.233.160.0/22" style="width:100%;text-align:left;resize:vertical"></textarea>' +
+      '</div>';
+
+    // Priority
+    html +=
+      '<div class="wizard-field">' +
+        '<label>Priority</label>' +
+        '<input type="number" class="form-input wizard-input" data-field="priority" value="100" min="1" max="999" style="width:80px">' +
+        '<span class="wizard-hint">Lower = preferred for dispatch</span>' +
+      '</div>';
+
+    // Type-specific fields
+    for (var f = 0; f < fields.length; f++) {
+      var fd = fields[f];
+      var req = fd.required ? '<span class="wizard-req">*</span>' : '';
+      var inputType = fd.secret ? 'password' : (fd.type === 'number' ? 'number' : 'text');
+
+      if (fd.type === 'select' && fd.options) {
+        html += '<div class="wizard-field"><label>' + _esc(fd.label) + ' ' + req + '</label><select class="form-input wizard-input" data-field="' + _esc(fd.name) + '" style="width:100%">';
+        for (var o = 0; o < fd.options.length; o++) {
+          html += '<option value="' + _esc(fd.options[o]) + '">' + _esc(fd.options[o]) + '</option>';
+        }
+        html += '</select></div>';
+      } else if (fd.type === 'textarea') {
+        html += '<div class="wizard-field"><label>' + _esc(fd.label) + ' ' + req + '</label>' +
+          '<textarea class="form-input wizard-input" data-field="' + _esc(fd.name) + '" rows="3" ' +
+          'placeholder="' + _esc(fd.hint || '') + '" style="width:100%;text-align:left;resize:vertical"></textarea></div>';
+      } else {
+        html += '<div class="wizard-field"><label>' + _esc(fd.label) + ' ' + req + '</label>' +
+          '<input type="' + inputType + '" class="form-input wizard-input" data-field="' + _esc(fd.name) + '" ' +
+          'placeholder="' + _esc(fd.hint || '') + '"' +
+          (fd.default_val ? ' value="' + _esc(fd.default_val) + '"' : '') +
+          ' style="width:100%;text-align:left"></div>';
+      }
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  }
+
+  function _renderWizardStep3(result) {
+    _wizardStep = 3;
+    var title = _$('wizardTitle');
+    if (title) title.textContent = result.ok ? 'Network Added' : 'Connection Test';
+    var next = _$('wizardNext');
+    if (next) {
+      if (result.ok) {
+        next.textContent = 'Done';
+        next.onclick = function () { _closeFabricWizard(); _loadFabrics(); };
+      } else {
+        next.textContent = 'Back';
+        next.onclick = function () { _renderWizardStep2(); next.onclick = function () { _wizardNext(); }; };
+      }
+    }
+
+    var body = _$('wizardBody');
+    if (!body) return;
+    var checks = result.checks || [];
+    var html = '<div class="wizard-results">';
+    for (var i = 0; i < checks.length; i++) {
+      var c = checks[i];
+      var icon = c.passed ? '<span class="wiz-check-pass">&#10003;</span>' : '<span class="wiz-check-fail">&#10007;</span>';
+      html += '<div class="wiz-check-row">' + icon + ' ' + _esc(c.label) +
+        (c.detail ? '<span class="wiz-check-detail">' + _esc(c.detail) + '</span>' : '') +
+        '</div>';
+    }
+    if (result.ok) {
+      html += '<div class="wiz-check-ok">Network added successfully.</div>';
+    } else {
+      html += '<div class="wiz-check-err">' + _esc(result.error || 'Connection test failed.') + '</div>';
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  }
+
+  function _wizardNext() {
+    if (_wizardStep === 1) {
+      if (!_wizardSelectedType) return;
+      _renderWizardStep2();
+    } else if (_wizardStep === 2) {
+      var body = _$('wizardBody');
+      if (!body) return;
+      var inputs = body.querySelectorAll('.wizard-input');
+      var config = {};
+      var subnets = [];
+      var name = '';
+      var priority = 100;
+
+      for (var i = 0; i < inputs.length; i++) {
+        var field = inputs[i].getAttribute('data-field');
+        var val = (inputs[i].value || '').trim();
+        if (field === 'name') { name = val; continue; }
+        if (field === 'subnets') {
+          subnets = val.split(/[\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+          continue;
+        }
+        if (field === 'priority') { priority = parseInt(val, 10) || 100; continue; }
+        if (val) config[field] = val;
+      }
+
+      if (!name) { alert('Name is required.'); return; }
+      if (!subnets.length) { alert('At least one subnet is required.'); return; }
+
+      var btn = _$('wizardNext');
+      if (btn) { btn.disabled = true; btn.textContent = 'Testing...'; }
+
+      _json('/api/fabrics', {
+        method: 'POST',
+        body: {
+          name: name,
+          fabric_type: _wizardSelectedType,
+          config: config,
+          subnets: subnets,
+          priority: priority
+        }
+      }).then(function (d) {
+        if (btn) { btn.disabled = false; }
+        _renderWizardStep3(d);
+      }).catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = 'Test & Save'; }
+      });
+    }
   }
 
   // ── Session Timeout ────────────────────────────────────────────────
@@ -617,7 +896,7 @@
   function _triggerScan() {
     var btn = _$('scanBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Scanning...'; }
-    _json('/api/scan', { method: 'POST' }).then(function () {
+    _json('/api/fleet/scan', { method: 'POST' }).then(function () {
       setTimeout(function () {
         if (btn) { btn.disabled = false; btn.textContent = 'Scan Now'; }
       }, 3000);
@@ -643,13 +922,15 @@
   // ── Public API ─────────────────────────────────────────────────────
 
   window.NX = {
-    triggerScan:     _triggerScan,
-    saveSettings:    _saveSettings,
-    loadSettings:    _loadSettings,
-    loadAudit:       _loadAudit,
-    loadFabrics:     _loadFabrics,
-    addFabric:       _addFabric,
-    sessionContinue: _sessionContinue,
+    triggerScan:        _triggerScan,
+    saveSettings:       _saveSettings,
+    loadSettings:       _loadSettings,
+    loadAudit:          _loadAudit,
+    loadFabrics:        _loadFabrics,
+    openFabricWizard:   _openFabricWizard,
+    closeFabricWizard:  _closeFabricWizard,
+    wizardNext:         _wizardNext,
+    sessionContinue:    _sessionContinue,
   };
 
 })();
