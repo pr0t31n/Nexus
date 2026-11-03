@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Nexus v2.1 — Network Fabric System
+Nexus v2.2 — Network Fabric System
 Fleet management hub for the pr0t31n toolkit. Discovers and manages
 tool instances across any network topology — VPN, overlay, cloud, or LAN.
-Runs on port 5400.
+Runs on port 6000.
 """
 from __future__ import annotations
 
@@ -47,8 +47,9 @@ credential_store.init_credential_store(NEXUS_DIR)
 from routes.admin import admin_bp
 from routes.fleet import fleet_bp
 from routes.fabrics import fabrics_bp
+from routes.terminal import terminal_bp
 
-for bp in (admin_bp, fleet_bp, fabrics_bp):
+for bp in (admin_bp, fleet_bp, fabrics_bp, terminal_bp):
     app.register_blueprint(bp)
 
 
@@ -87,6 +88,19 @@ _fleet_discovery = FleetDiscovery(_fabric_manager, socketio=socketio)
 
 app.config["fabric_manager"] = _fabric_manager
 app.config["fleet_discovery"] = _fleet_discovery
+
+# ---------------------------------------------------------------------------
+# SSH Terminal + Tunnel Manager (Phase 3)
+# ---------------------------------------------------------------------------
+
+from services.ssh_terminal import SSHTerminalManager
+from services.ssh_tunnel import SSHTunnelManager
+
+_ssh_terminal = SSHTerminalManager(socketio=socketio, fabric_manager=_fabric_manager)
+_ssh_tunnel = SSHTunnelManager(fabric_manager=_fabric_manager)
+
+app.config["ssh_terminal"] = _ssh_terminal
+app.config["ssh_tunnel"] = _ssh_tunnel
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +260,7 @@ def change_password():
 
 
 # ---------------------------------------------------------------------------
-# SocketIO
+# SocketIO — fleet + terminal
 # ---------------------------------------------------------------------------
 
 @socketio.on("connect")
@@ -263,6 +277,32 @@ def on_request_scan():
     _fleet_discovery.trigger_scan()
 
 
+@socketio.on("term_input")
+def on_term_input(data):
+    if not session.get("authenticated"):
+        return
+    sid = data.get("session_id", "")
+    payload = data.get("data", "")
+    if sid and payload:
+        _ssh_terminal.send_input(sid, payload)
+
+
+@socketio.on("term_resize")
+def on_term_resize(data):
+    if not session.get("authenticated"):
+        return
+    sid = data.get("session_id", "")
+    cols = data.get("cols", 120)
+    rows = data.get("rows", 40)
+    if sid:
+        _ssh_terminal.resize(sid, int(cols), int(rows))
+
+
+@socketio.on("disconnect")
+def on_disconnect():
+    _ssh_terminal.disconnect_all(request.sid)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -274,5 +314,7 @@ if __name__ == "__main__":
     print("=" * 56)
     _fabric_manager.start()
     _fleet_discovery.start()
+    _ssh_terminal.start()
+    _ssh_tunnel.start()
     socketio.run(app, debug=False, host="0.0.0.0", port=NEXUS_PORT,
                  allow_unsafe_werkzeug=True, ssl_context=_auth.make_ssl_context())

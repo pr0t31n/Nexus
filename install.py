@@ -24,7 +24,7 @@ W  = "\033[0m"
 APP_NAME     = "Nexus"
 APP_DIR      = Path("/opt/pr0t31n/Nexus")
 SERVICE_NAME = "pr0t31n-nexus"
-APP_PORT     = 5400
+APP_PORT     = 6000
 
 SYSTEMD_UNIT = Path(f"/etc/systemd/system/{SERVICE_NAME}.service")
 LAUNCHD_PLIST = Path(f"/Library/LaunchDaemons/com.pr0t31n.nexus.plist")
@@ -44,6 +44,8 @@ PIP_PKGS = [
     "flask-socketio>=5.3.0",
     "requests>=2.28.0",
     "cryptography>=41.0.0",
+    "paramiko>=3.4.0",
+    "sshtunnel>=0.4.0",
 ]
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
@@ -345,7 +347,7 @@ def run_check():
             all_ok = False
 
     # Python modules
-    for mod in ("flask", "flask_socketio", "eventlet", "requests"):
+    for mod in ("flask", "flask_socketio", "requests", "paramiko", "sshtunnel"):
         ok = run_ok([sys.executable, "-c", f"import {mod}"])
         if ok:
             info(f"python:{mod:16s} {G}OK{W}")
@@ -384,7 +386,7 @@ def post_install_summary(os_type):
         results.append((tool, bool(path), path or "missing"))
 
     # Python modules
-    for mod in ("flask", "flask_socketio", "eventlet", "requests"):
+    for mod in ("flask", "flask_socketio", "requests", "paramiko", "sshtunnel"):
         ok = run_ok([sys.executable, "-c", f"import {mod}"])
         results.append((f"python:{mod}", ok, "installed" if ok else "missing"))
 

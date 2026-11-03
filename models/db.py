@@ -1,4 +1,4 @@
-"""Nexus v2.1 — Database schema and connection management."""
+"""Nexus v2.2 — Database schema and connection management."""
 from __future__ import annotations
 
 import json
@@ -669,6 +669,91 @@ def delete_credential(cred_id: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Tunnel helpers
+# ---------------------------------------------------------------------------
+
+def create_tunnel(node_id: int, fabric_id: int | None, tunnel_type: str,
+                  local_port: int, remote_host: str, remote_port: int,
+                  pid: int | None = None) -> int:
+    conn = get_conn()
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO tunnels "
+        "(node_id, fabric_id, tunnel_type, local_port, remote_host, remote_port, pid, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)",
+        (node_id, fabric_id, tunnel_type, local_port, remote_host, remote_port, pid, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_tunnels(node_id: int | None = None) -> list[dict]:
+    conn = get_conn()
+    if node_id is not None:
+        rows = conn.execute(
+            "SELECT t.*, fn.hostname AS node_hostname, nf.name AS fabric_name "
+            "FROM tunnels t "
+            "LEFT JOIN fleet_nodes fn ON t.node_id = fn.id "
+            "LEFT JOIN network_fabrics nf ON t.fabric_id = nf.id "
+            "WHERE t.node_id = ? ORDER BY t.created_at DESC",
+            (node_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT t.*, fn.hostname AS node_hostname, nf.name AS fabric_name "
+            "FROM tunnels t "
+            "LEFT JOIN fleet_nodes fn ON t.node_id = fn.id "
+            "LEFT JOIN network_fabrics nf ON t.fabric_id = nf.id "
+            "ORDER BY t.created_at DESC"
+        ).fetchall()
+    return dict_rows(rows)
+
+
+def get_tunnel(tunnel_id: int) -> dict | None:
+    row = get_conn().execute(
+        "SELECT t.*, fn.hostname AS node_hostname, nf.name AS fabric_name "
+        "FROM tunnels t "
+        "LEFT JOIN fleet_nodes fn ON t.node_id = fn.id "
+        "LEFT JOIN network_fabrics nf ON t.fabric_id = nf.id "
+        "WHERE t.id = ?",
+        (tunnel_id,),
+    ).fetchone()
+    return dict_row(row)
+
+
+def update_tunnel_status(tunnel_id: int, status: str, pid: int | None = None) -> bool:
+    conn = get_conn()
+    if pid is not None:
+        conn.execute(
+            "UPDATE tunnels SET status = ?, pid = ? WHERE id = ?",
+            (status, pid, tunnel_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE tunnels SET status = ? WHERE id = ?",
+            (status, tunnel_id),
+        )
+    conn.commit()
+    return True
+
+
+def delete_tunnel(tunnel_id: int) -> bool:
+    conn = get_conn()
+    conn.execute("DELETE FROM tunnels WHERE id = ?", (tunnel_id,))
+    conn.commit()
+    return True
+
+
+def delete_stale_tunnels() -> int:
+    conn = get_conn()
+    cur = conn.execute(
+        "DELETE FROM tunnels WHERE status = 'stopped'"
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------
 
@@ -688,6 +773,9 @@ def fleet_stats() -> dict:
         "SELECT COUNT(*) AS c FROM network_fabrics WHERE enabled = 1"
     ).fetchone()["c"]
     tools = conn.execute("SELECT COUNT(*) AS c FROM tool_instances").fetchone()["c"]
+    tunnels = conn.execute(
+        "SELECT COUNT(*) AS c FROM tunnels WHERE status = 'active'"
+    ).fetchone()["c"]
     return {
         "total": total,
         "online": online,
@@ -696,6 +784,7 @@ def fleet_stats() -> dict:
         "enrolled": enrolled,
         "fabrics": fabrics,
         "tools": tools,
+        "tunnels": tunnels,
     }
 
 

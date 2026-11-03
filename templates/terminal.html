@@ -1,18 +1,100 @@
 {% extends "layout.html" %}
 {% block title %}Nexus — Terminal{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Terminal</h1>
+  <div class="page-header-right">
+    <span class="term-session-count" id="termSessionCount">0 sessions</span>
+  </div>
 </div>
-<div class="placeholder-panel">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="placeholder-icon">
-    <rect x="2" y="4" width="20" height="16" rx="2"/>
-    <polyline points="6,10 10,14 6,18"/>
-    <line x1="12" y1="18" x2="18" y2="18"/>
-  </svg>
-  <h2>SSH Terminal</h2>
-  <p>In-browser SSH terminal with fabric-aware routing, jump host auto-selection, and multi-tab support.</p>
-  <p class="placeholder-phase">Coming in Phase 3</p>
+
+<!-- Terminal tab bar -->
+<div class="term-tabs" id="termTabs">
+  <button class="term-tab-new btn btn-xs btn-muted" id="termNewBtn" title="New SSH session">+</button>
 </div>
+
+<!-- Terminal viewport -->
+<div class="term-viewport" id="termViewport">
+  <div class="term-empty" id="termEmpty">
+    <div class="empty-state-icon">&#9002;</div>
+    <div class="empty-state-msg">No active sessions. Click <strong>+</strong> to connect to a node.</div>
+  </div>
+</div>
+
+<!-- Route indicator bar below terminal -->
+<div class="term-route-bar" id="termRouteBar" hidden>
+  <span class="term-route-via" id="termRouteVia"></span>
+  <span class="term-route-duration" id="termRouteDuration"></span>
+</div>
+
+<!-- Connect dialog (modal) -->
+<div class="modal-overlay" id="termConnectModal">
+  <div class="modal-dialog" style="width:440px">
+    <div class="modal-header">
+      <h3>Connect to Node</h3>
+      <button class="modal-close" onclick="NX.closeTermConnect()">&times;</button>
+    </div>
+    <div class="modal-body" id="termConnectBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-muted" onclick="NX.closeTermConnect()">Cancel</button>
+      <button class="btn btn-accent" id="termConnectBtn" onclick="NX.termConnect()">Connect</button>
+    </div>
+  </div>
+</div>
+
+<!-- SOCKS5 dialog (modal) -->
+<div class="modal-overlay" id="socksModal">
+  <div class="modal-dialog" style="width:420px">
+    <div class="modal-header">
+      <h3>New SOCKS5 Proxy</h3>
+      <button class="modal-close" onclick="NX.closeSocksDialog()">&times;</button>
+    </div>
+    <div class="modal-body" id="socksBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-muted" onclick="NX.closeSocksDialog()">Cancel</button>
+      <button class="btn btn-accent" id="socksCreateBtn" onclick="NX.createSocks()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Port Forward dialog (modal) -->
+<div class="modal-overlay" id="forwardModal">
+  <div class="modal-dialog" style="width:420px">
+    <div class="modal-header">
+      <h3>New Port Forward</h3>
+      <button class="modal-close" onclick="NX.closeForwardDialog()">&times;</button>
+    </div>
+    <div class="modal-body" id="forwardBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-muted" onclick="NX.closeForwardDialog()">Cancel</button>
+      <button class="btn btn-accent" id="forwardCreateBtn" onclick="NX.createForward()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tunnel drawer -->
+<div class="tunnel-drawer" id="tunnelDrawer">
+  <button class="tunnel-drawer-toggle" onclick="NX.toggleTunnelDrawer()">
+    Tunnels <span class="tunnel-count-badge" id="tunnelCount">0</span>
+    <span class="tunnel-arrow" id="tunnelArrow">&#9650;</span>
+  </button>
+  <div class="tunnel-drawer-body" id="tunnelDrawerBody" hidden>
+    <div class="tunnel-actions">
+      <button class="btn btn-xs btn-accent" onclick="NX.openSocksDialog()">SOCKS5</button>
+      <button class="btn btn-xs btn-muted" onclick="NX.openForwardDialog()">Port Forward</button>
+    </div>
+    <div id="tunnelList" class="tunnel-list"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="{{ url_for('static', filename='js/terminal.js') }}?v={{ app_version }}"></script>
 {% endblock %}

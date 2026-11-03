@@ -1509,3 +1509,314 @@ a:hover { color: var(--accent-hover); }
   color: var(--accent-text);
   border-color: var(--accent);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 3 — TERMINAL TABS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.term-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 0 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.term-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--fg-2);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+  white-space: nowrap;
+  max-width: 180px;
+}
+.term-tab:hover {
+  color: var(--fg-0);
+  background: var(--bg-2);
+}
+.term-tab-active {
+  color: var(--fg-0);
+  border-bottom-color: var(--accent);
+  background: var(--bg-2);
+}
+.term-tab-dead {
+  opacity: .5;
+  text-decoration: line-through;
+}
+.term-tab-dead:hover { opacity: .7; }
+
+.term-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.term-tab-close {
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--fg-2);
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 3px;
+  transition: color .15s, background .15s;
+}
+.term-tab-close:hover {
+  color: var(--danger);
+  background: rgba(192,57,43,.1);
+}
+
+.term-tab-new {
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  margin-left: 4px;
+  border-bottom: 2px solid transparent;
+}
+
+.term-session-count {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--fg-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 3 — TERMINAL VIEWPORT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.term-viewport {
+  flex: 1;
+  min-height: 400px;
+  max-height: calc(100vh - 240px);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.term-container {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  padding: 4px;
+}
+.term-container .xterm {
+  height: 100%;
+}
+
+.term-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 3 — ROUTE BAR (below terminal)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.term-route-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  font-size: 0.72rem;
+  color: var(--fg-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  font-family: ui-monospace, 'SF Mono', monospace;
+}
+.term-route-via {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.term-route-duration {
+  flex-shrink: 0;
+  margin-left: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 3 — TUNNEL DRAWER (fixed bottom)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tunnel-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 240px;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  transition: left .25s ease;
+}
+
+.tunnel-drawer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--fg-1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color .15s;
+}
+.tunnel-drawer-toggle:hover {
+  color: var(--fg-0);
+}
+
+.tunnel-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: var(--bg-3);
+  color: var(--fg-1);
+  border-radius: 9px;
+  padding: 0 5px;
+}
+
+.tunnel-arrow {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: var(--fg-2);
+}
+
+.tunnel-drawer-body {
+  padding: 0 16px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tunnel-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tunnel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tunnel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.tunnel-type {
+  font-size: 1rem;
+  color: var(--accent);
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.tunnel-label {
+  font-weight: 600;
+  color: var(--fg-0);
+  flex-shrink: 0;
+  width: 60px;
+}
+
+.tunnel-detail {
+  color: var(--fg-1);
+  flex: 1;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tunnel-fabric {
+  font-size: 0.7rem;
+  color: var(--fg-2);
+  background: var(--bg-3);
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.tunnel-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tunnel-status-up { background: var(--online); }
+.tunnel-status-down { background: var(--offline); }
+
+.tunnel-destroy {
+  padding: 2px 6px !important;
+  font-size: 0.85rem !important;
+  line-height: 1;
+}
+
+.tunnel-empty {
+  font-size: 0.78rem;
+  color: var(--fg-2);
+  font-style: italic;
+  padding: 8px 0;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 3 — RESPONSIVE: tunnel drawer + terminal
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .tunnel-drawer {
+    left: 0;
+  }
+  .term-viewport {
+    max-height: calc(100vh - 280px);
+  }
+  .term-tab-label {
+    max-width: 70px;
+  }
+}
+
+/* btn-xs (used in multiple places but may not be defined yet) */
+.btn-xs {
+  font-size: 0.72rem;
+  padding: 4px 10px;
+}

@@ -1,10 +1,10 @@
-"""Nexus v2.1 — Application configuration."""
+"""Nexus v2.2 — Application configuration."""
 from __future__ import annotations
 
 from pathlib import Path
 
 NEXUS_DIR = Path(__file__).parent.resolve()
-NEXUS_PORT = 5400
+NEXUS_PORT = 6000
 
 # Tool registry — services Nexus discovers on the fleet.
 TOOL_REGISTRY = [
@@ -16,7 +16,7 @@ TOOL_REGISTRY = [
      "desc": "Pentest Hardware Manager",    "status_api": False, "icon": "quiver"},
     {"id": "spectre",    "name": "Spectre",    "port": 5300, "proto": "https",
      "desc": "Wireless Assessment",         "status_api": True,  "icon": "wave"},
-    {"id": "nexus",      "name": "Nexus",      "port": 5400, "proto": "https",
+    {"id": "nexus",      "name": "Nexus",      "port": 6000, "proto": "https",
      "desc": "Fleet Management Hub",        "status_api": True,  "icon": "nexus"},
     {"id": "crucible",   "name": "Crucible",   "port": 5500, "proto": "https",
      "desc": "Web & API Assessment",        "status_api": True,  "icon": "crucible"},
