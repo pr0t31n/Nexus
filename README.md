@@ -27,13 +27,13 @@ https://localhost:5400
 
 | Service     | Port | Protocol | Scan Status |
 |-------------|------|----------|-------------|
-| Gauntlet    | 5000 | HTTPS    | ✓ (device security assessment) |
-| SpiderFoot  | 5001 | HTTP     | — |
-| Vantage     | 5100 | HTTPS    | ✓ (recon platform) |
-| Quiver      | 5200 | HTTPS    | — (no scan concept) |
-| Spectre     | 5300 | HTTPS    | ✓ (wireless assessment) |
+| Crucible    | 5100 | HTTPS    | ✓ (unified orchestration platform) |
+| Nexus       | 5400 | HTTPS    | — (fleet hub) |
+| Gauntlet    | 5700 | HTTPS    | ✓ (network device assessment) |
+| Quiver      | 5200 | HTTPS    | — (hardware manager) |
+| Polaris     | 5900 | HTTPS    | ✓ (tunnel manager) |
+| Beacon      | 9443 | HTTPS    | — (engagement status) |
 | Nessus      | 8834 | HTTPS    | — |
-| HiTMan    | 8443 | HTTPS    | — |
 
 Scan status is retrieved by querying `GET /api/nexus-status` on apps that support it. The endpoint returns `{"scanning": true|false}` and is intentionally unauthenticated so Nexus can poll without credentials.
 
@@ -160,8 +160,8 @@ All endpoints require an authenticated session cookie except `/api/nexus-status`
   "last_scan": "2025-04-06T14:32:11.445Z",
   "instances": [
     {
-      "id": "vantage",
-      "name": "Vantage",
+      "id": "crucible",
+      "name": "Crucible",
       "desc": "Recon Platform",
       "icon": "scope",
       "proto": "https",
