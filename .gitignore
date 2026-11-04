@@ -4,3 +4,6 @@ ssl.key
 ssl.crt
 .nexus_fernet.key
 .auth.json
+
+# Backups
+*.bak*
