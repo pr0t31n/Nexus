@@ -9,29 +9,25 @@ BROKER_PORT = 5401
 
 # Tool registry — services Nexus discovers on the fleet.
 TOOL_REGISTRY = [
-    {"id": "gauntlet",   "name": "Gauntlet",   "port": 5000, "proto": "https",
-     "desc": "Hardware Assessment",         "status_api": True,  "icon": "chip"},
-    {"id": "vantage",    "name": "Vantage",    "port": 5100, "proto": "https",
-     "desc": "Network & OSINT Recon",       "status_api": True,  "icon": "scope"},
-    {"id": "quiver",     "name": "Quiver",     "port": 5200, "proto": "https",
-     "desc": "Pentest Hardware Manager",    "status_api": False, "icon": "quiver"},
-    {"id": "spectre",    "name": "Spectre",    "port": 5300, "proto": "https",
-     "desc": "Wireless Assessment",         "status_api": True,  "icon": "wave"},
-    {"id": "nexus",      "name": "Nexus",      "port": 6000, "proto": "https",
-     "desc": "Fleet Management Hub",        "status_api": True,  "icon": "nexus"},
     {"id": "crucible",   "name": "Crucible",   "port": 5100, "proto": "https",
      "desc": "Pentest Orchestration",       "status_api": True,  "icon": "crucible"},
+    {"id": "gauntlet",   "name": "Gauntlet",   "port": 5700, "proto": "https",
+     "desc": "Hardware Assessment",         "status_api": True,  "icon": "chip"},
+    {"id": "quiver",     "name": "Quiver",     "port": 5200, "proto": "https",
+     "desc": "Pentest Hardware Manager",    "status_api": False, "icon": "quiver"},
+    {"id": "nexus",      "name": "Nexus",      "port": 6000, "proto": "https",
+     "desc": "Fleet Management Hub",        "status_api": True,  "icon": "nexus"},
+    {"id": "polaris",    "name": "Polaris",    "port": 5900, "proto": "https",
+     "desc": "Tunnel Manager",              "status_api": True,  "icon": "tunnel"},
+    {"id": "beacon",     "name": "Beacon",     "port": 9443, "proto": "https",
+     "desc": "Engagement Status",           "status_api": False, "icon": "signal"},
     {"id": "nessus",     "name": "Nessus",     "port": 8834, "proto": "https",
      "desc": "Vulnerability Scanner",       "status_api": False, "icon": "scan"},
-    {"id": "hitman",     "name": "HiTMan",     "port": 8443, "proto": "https",
-     "desc": "Security Management",         "status_api": False, "icon": "lock"},
 ]
 
 # Arsenal install map — maps tool IDs to install scripts
 TOOL_INSTALL_MAP: dict[str, str] = {
     "crucible":     "/opt/pr0t31n/Crucible/install.py",
-    "vantage":      "/opt/pr0t31n/Vantage/install.py",
-    "spectre":      "/opt/pr0t31n/Spectre/install.py",
     "gauntlet":     "/opt/pr0t31n/Gauntlet/install.py",
     "bastion":      "/opt/pr0t31n/Bastion/install.py",
     "fracture":     "/opt/pr0t31n/Fracture/install.py",
@@ -39,6 +35,8 @@ TOOL_INSTALL_MAP: dict[str, str] = {
     "scattershot3": "/opt/pr0t31n/Scattershot3/install.py",
     "osift":        "/opt/pr0t31n/OSift/install.py",
     "gearbox":      "/opt/pr0t31n/Gearbox/install.py",
+    "beacon":       "/opt/pr0t31n/Beacon/install.py",
+    "polaris":      "/opt/pr0t31n/Polaris/install.py",
 }
 
 # RBAC roles

@@ -3,7 +3,7 @@
 **Nexus** is a lightweight, self-hosted dashboard that discovers and monitors every security platform instance running on your local network. It continuously probes all network interfaces for known tools, displays live scan status, and lets you jump directly to any discovered instance — all from a single authenticated HTTPS page.
 
 ```
-https://localhost:5400
+https://localhost:6000
 ```
 
 ---
@@ -28,7 +28,7 @@ https://localhost:5400
 | Service     | Port | Protocol | Scan Status |
 |-------------|------|----------|-------------|
 | Crucible    | 5100 | HTTPS    | ✓ (unified orchestration platform) |
-| Nexus       | 5400 | HTTPS    | — (fleet hub) |
+| Nexus       | 6000 | HTTPS    | — (fleet hub) |
 | Gauntlet    | 5700 | HTTPS    | ✓ (network device assessment) |
 | Quiver      | 5200 | HTTPS    | — (hardware manager) |
 | Polaris     | 5900 | HTTPS    | ✓ (tunnel manager) |
@@ -83,7 +83,7 @@ python3 app.py
 
 ## First login
 
-Navigate to `https://localhost:5400`. Your browser will warn about the self-signed certificate — accept it to proceed.
+Navigate to `https://localhost:6000`. Your browser will warn about the self-signed certificate — accept it to proceed.
 
 | Field    | Default value     |
 |----------|-------------------|
@@ -100,7 +100,7 @@ Credentials are stored as bcrypt-compatible hashes in `.auth.json` inside the Ne
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  Browser (HTTPS :5400)              │
+│                  Browser (HTTPS :6000)              │
 │  SocketIO ←── instances_update push event           │
 │  "Scan Now" ──► request_scan event / POST /api/scan │
 └─────────────────────────────────────────────────────┘
@@ -162,8 +162,8 @@ All endpoints require an authenticated session cookie except `/api/nexus-status`
     {
       "id": "crucible",
       "name": "Crucible",
-      "desc": "Recon Platform",
-      "icon": "scope",
+      "desc": "Pentest Orchestration",
+      "icon": "crucible",
       "proto": "https",
       "port": 5100,
       "hostname": "pentest-box",
@@ -212,4 +212,4 @@ This stops the service, disables it from booting, and removes the service file. 
 
 ## Version
 
-`1.0.0` — Initial release
+`2.5.5` — Current release
