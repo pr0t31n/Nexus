@@ -1,4 +1,4 @@
-"""Nexus v2.5 — Application configuration."""
+"""Nexus v2.6 — Application configuration."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,9 +21,10 @@ TOOL_REGISTRY = [
      "desc": "Tunnel Manager",              "status_api": True,  "icon": "tunnel"},
     {"id": "beacon",     "name": "Beacon",     "port": 9443, "proto": "https",
      "desc": "Engagement Status",           "status_api": False, "icon": "signal"},
-    {"id": "nessus",     "name": "Nessus",     "port": 8834, "proto": "https",
-     "desc": "Vulnerability Scanner",       "status_api": False, "icon": "scan"},
 ]
+
+# Nessus, and any other third-party tools, are managed via the Custom
+# Services UI (DB-backed) and no longer appear in this static registry.
 
 # Arsenal install map — maps tool IDs to install scripts
 TOOL_INSTALL_MAP: dict[str, str] = {

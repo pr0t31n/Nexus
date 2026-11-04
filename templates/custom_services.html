@@ -1,0 +1,432 @@
+{% extends "layout.html" %}
+{% block title %}Nexus — Services{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Custom Services</h1>
+  <button class="btn btn-accent" onclick="CS.openAdd()">Add Service</button>
+</div>
+
+<p class="page-desc">Monitor third-party tools and services alongside the built-in pr0t31n fleet. Supports TCP probing, authenticated API polling, and inbound webhooks.</p>
+
+<div id="servicesList" class="services-grid"></div>
+
+<!-- ── Add/Edit modal ── -->
+<div class="modal-overlay" id="svcModal">
+  <div class="modal-card" style="max-width:640px">
+    <div class="modal-header">
+      <h3 id="svcModalTitle">Add Custom Service</h3>
+      <button class="modal-close" onclick="CS.closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="svcEditId" value="">
+
+      <div class="form-row">
+        <label>Service ID <small>(lowercase, hyphens, 1-63 chars)</small></label>
+        <input class="form-input" id="svcSid" placeholder="e.g. nessus">
+      </div>
+      <div class="form-row">
+        <label>Display Name</label>
+        <input class="form-input" id="svcName" placeholder="e.g. Nessus">
+      </div>
+      <div class="form-row-inline">
+        <div class="form-row">
+          <label>Port</label>
+          <input class="form-input" id="svcPort" type="number" min="1" max="65535" placeholder="8834">
+        </div>
+        <div class="form-row">
+          <label>Protocol</label>
+          <select class="form-input" id="svcProto">
+            <option value="https">HTTPS</option>
+            <option value="http">HTTP</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Description</label>
+        <input class="form-input" id="svcDesc" placeholder="e.g. Vulnerability Scanner">
+      </div>
+      <div class="form-row">
+        <label>Icon keyword</label>
+        <input class="form-input" id="svcIcon" placeholder="e.g. scan">
+      </div>
+
+      <hr class="form-divider">
+      <div class="form-row">
+        <label>Integration Method</label>
+        <select class="form-input" id="svcIntegration" onchange="CS.toggleSections()">
+          <option value="tcp_only">TCP Only — port probe, no API</option>
+          <option value="api_poll">API Polling — authenticated status check</option>
+          <option value="webhook">Webhook Receiver — tool pushes status to Nexus</option>
+        </select>
+      </div>
+
+      <!-- API Polling fields -->
+      <div id="apiSection" style="display:none">
+        <h4 class="form-section-title">API Polling Configuration</h4>
+        <div class="form-row">
+          <label>Status Endpoint</label>
+          <input class="form-input" id="apiEndpoint" placeholder="/api/status">
+        </div>
+        <div class="form-row-inline">
+          <div class="form-row">
+            <label>HTTP Method</label>
+            <select class="form-input" id="apiMethod">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Response Format</label>
+            <select class="form-input" id="apiResponseType">
+              <option value="json">JSON</option>
+              <option value="text">Text</option>
+              <option value="status_code">Status Code Only</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>JSON Path to Status <small>(dot-notation, e.g. data.status)</small></label>
+          <input class="form-input" id="apiStatusPath" placeholder="status">
+        </div>
+        <div class="form-row">
+          <label>Value that means "scanning" <small>(compared case-insensitively)</small></label>
+          <input class="form-input" id="apiScanningValue" placeholder="running">
+        </div>
+        <div class="form-row-inline">
+          <div class="form-row">
+            <label>Poll Interval (seconds)</label>
+            <input class="form-input" id="apiPollInterval" type="number" min="10" value="60">
+          </div>
+          <div class="form-row">
+            <label>Verify TLS</label>
+            <select class="form-input" id="apiVerifyTls">
+              <option value="0">No (self-signed OK)</option>
+              <option value="1">Yes (strict)</option>
+            </select>
+          </div>
+        </div>
+
+        <h4 class="form-section-title">Authentication</h4>
+        <div class="form-row">
+          <label>Auth Type</label>
+          <select class="form-input" id="apiAuthType" onchange="CS.toggleAuthFields()">
+            <option value="none">None</option>
+            <option value="api_key">API Key (custom header)</option>
+            <option value="bearer">Bearer Token</option>
+            <option value="basic">Basic Auth</option>
+            <option value="custom_header">Custom Header</option>
+          </select>
+        </div>
+        <div id="authHeaderRow" class="form-row" style="display:none">
+          <label>Header Name</label>
+          <input class="form-input" id="apiAuthHeader" placeholder="X-Api-Key">
+        </div>
+        <div id="authUsernameRow" class="form-row" style="display:none">
+          <label>Username</label>
+          <input class="form-input" id="apiAuthUsername" placeholder="admin">
+        </div>
+        <div id="authValueRow" class="form-row" style="display:none">
+          <label id="authValueLabel">API Key / Token / Password</label>
+          <input class="form-input" id="apiAuthValue" type="password" placeholder="(encrypted at rest)">
+          <small id="authConfigured" style="display:none;color:var(--success)">Credential configured — leave blank to keep existing</small>
+        </div>
+      </div>
+
+      <!-- Webhook fields -->
+      <div id="webhookSection" style="display:none">
+        <h4 class="form-section-title">Webhook Configuration</h4>
+        <div class="form-row">
+          <label>Webhook URL</label>
+          <div class="form-static" id="webhookUrl">Save the service first to get the webhook URL</div>
+        </div>
+        <div class="form-row">
+          <label>HMAC Secret <small>(optional — validates X-Signature-256 header)</small></label>
+          <input class="form-input" id="webhookSecret" type="password" placeholder="(encrypted at rest)">
+          <small id="webhookSecretConfigured" style="display:none;color:var(--success)">Secret configured — leave blank to keep existing</small>
+        </div>
+        <div class="form-row">
+          <label>Signature Header</label>
+          <input class="form-input" id="webhookSigHeader" value="X-Signature-256">
+        </div>
+        <div class="form-row">
+          <label>Payload JSON Path <small>(path to status value in webhook body)</small></label>
+          <input class="form-input" id="webhookPayloadPath" placeholder="event.status">
+        </div>
+        <div class="form-row">
+          <label>Value that means "scanning"</label>
+          <input class="form-input" id="webhookScanningValue" placeholder="running">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-muted" onclick="CS.closeModal()">Cancel</button>
+      <button class="btn btn-accent" id="svcSaveBtn" onclick="CS.save()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete confirm modal ── -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal-card" style="max-width:420px">
+    <div class="modal-header"><h3>Delete Service</h3></div>
+    <div class="modal-body">
+      <p>Remove <strong id="deleteName"></strong>? This cannot be undone.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-muted" onclick="CS.closeDelete()">Cancel</button>
+      <button class="btn btn-danger" onclick="CS.confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CS = (function(){
+  let _services = [];
+  let _deleteId = null;
+
+  function load(){
+    fetch('/api/custom-services').then(r=>r.json()).then(d=>{
+      _services = d.services || [];
+      render();
+    });
+  }
+
+  function render(){
+    const el = document.getElementById('servicesList');
+    if(!_services.length){
+      el.innerHTML = '<div class="empty-state">No custom services configured. Click <strong>Add Service</strong> to monitor a third-party tool.</div>';
+      return;
+    }
+    el.innerHTML = _services.map(s=>{
+      const badge = s.enabled ? '<span class="badge badge-online">Enabled</span>' : '<span class="badge badge-offline">Disabled</span>';
+      const status = s.last_status ? `<span class="badge badge-info">${esc(s.last_status)}</span>` : '';
+      const intLabel = {tcp_only:'TCP Only', api_poll:'API Poll', webhook:'Webhook'}[s.integration]||s.integration;
+      return `<div class="card service-card" data-id="${s.id}">
+        <div class="card-header">
+          <strong>${esc(s.name)}</strong>
+          <span class="service-port">:${s.port}</span>
+          ${badge} ${status}
+        </div>
+        <div class="card-body">
+          <div class="service-meta">
+            <span><strong>ID:</strong> ${esc(s.service_id)}</span>
+            <span><strong>Method:</strong> ${intLabel}</span>
+            ${s.description ? '<span><strong>Desc:</strong> '+esc(s.description)+'</span>' : ''}
+            ${s.last_status_ts ? '<span><strong>Last check:</strong> '+esc(s.last_status_ts)+'</span>' : ''}
+          </div>
+        </div>
+        <div class="card-footer service-actions">
+          <button class="btn btn-sm btn-accent" onclick="CS.test(${s.id})">Test</button>
+          <button class="btn btn-sm btn-muted" onclick="CS.toggle(${s.id})">${s.enabled?'Disable':'Enable'}</button>
+          <button class="btn btn-sm btn-muted" onclick="CS.openEdit(${s.id})">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="CS.openDelete(${s.id},'${esc(s.name)}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function openAdd(){
+    document.getElementById('svcEditId').value = '';
+    document.getElementById('svcModalTitle').textContent = 'Add Custom Service';
+    document.getElementById('svcSid').value = '';
+    document.getElementById('svcSid').disabled = false;
+    document.getElementById('svcName').value = '';
+    document.getElementById('svcPort').value = '';
+    document.getElementById('svcProto').value = 'https';
+    document.getElementById('svcDesc').value = '';
+    document.getElementById('svcIcon').value = '';
+    document.getElementById('svcIntegration').value = 'tcp_only';
+    clearApiFields();
+    clearWebhookFields();
+    toggleSections();
+    document.getElementById('authConfigured').style.display = 'none';
+    document.getElementById('webhookSecretConfigured').style.display = 'none';
+    document.getElementById('webhookUrl').textContent = 'Save the service first to get the webhook URL';
+    document.getElementById('svcModal').classList.add('active');
+  }
+
+  function openEdit(id){
+    const s = _services.find(x=>x.id===id);
+    if(!s) return;
+    document.getElementById('svcEditId').value = id;
+    document.getElementById('svcModalTitle').textContent = 'Edit: '+s.name;
+    document.getElementById('svcSid').value = s.service_id;
+    document.getElementById('svcSid').disabled = true;
+    document.getElementById('svcName').value = s.name;
+    document.getElementById('svcPort').value = s.port;
+    document.getElementById('svcProto').value = s.proto||'https';
+    document.getElementById('svcDesc').value = s.description||'';
+    document.getElementById('svcIcon').value = s.icon||'';
+    document.getElementById('svcIntegration').value = s.integration||'tcp_only';
+
+    document.getElementById('apiEndpoint').value = s.api_endpoint||'';
+    document.getElementById('apiMethod').value = s.api_method||'GET';
+    document.getElementById('apiResponseType').value = s.api_response_type||'json';
+    document.getElementById('apiStatusPath').value = s.api_status_path||'';
+    document.getElementById('apiScanningValue').value = s.api_scanning_value||'';
+    document.getElementById('apiPollInterval').value = s.poll_interval_s||60;
+    document.getElementById('apiVerifyTls').value = s.api_verify_tls?'1':'0';
+    document.getElementById('apiAuthType').value = s.api_auth_type||'none';
+    document.getElementById('apiAuthHeader').value = s.api_auth_header||'';
+    document.getElementById('apiAuthUsername').value = s.api_auth_username||'';
+    document.getElementById('apiAuthValue').value = '';
+    document.getElementById('authConfigured').style.display = s.api_auth_value_configured?'block':'none';
+
+    document.getElementById('webhookSecret').value = '';
+    document.getElementById('webhookSecretConfigured').style.display = s.webhook_secret_configured?'block':'none';
+    document.getElementById('webhookSigHeader').value = s.webhook_sig_header||'X-Signature-256';
+    document.getElementById('webhookPayloadPath').value = s.webhook_payload_path||'';
+    document.getElementById('webhookScanningValue').value = s.webhook_scanning_value||'';
+    document.getElementById('webhookUrl').textContent = location.origin+'/api/webhooks/'+s.service_id;
+
+    toggleSections();
+    toggleAuthFields();
+    document.getElementById('svcModal').classList.add('active');
+  }
+
+  function closeModal(){ document.getElementById('svcModal').classList.remove('active'); }
+
+  function clearApiFields(){
+    ['apiEndpoint','apiStatusPath','apiScanningValue','apiAuthHeader','apiAuthUsername','apiAuthValue'].forEach(id=>{
+      document.getElementById(id).value='';
+    });
+    document.getElementById('apiMethod').value='GET';
+    document.getElementById('apiResponseType').value='json';
+    document.getElementById('apiPollInterval').value='60';
+    document.getElementById('apiVerifyTls').value='0';
+    document.getElementById('apiAuthType').value='none';
+    toggleAuthFields();
+  }
+
+  function clearWebhookFields(){
+    ['webhookSecret','webhookPayloadPath','webhookScanningValue'].forEach(id=>{
+      document.getElementById(id).value='';
+    });
+    document.getElementById('webhookSigHeader').value='X-Signature-256';
+  }
+
+  function toggleSections(){
+    const v = document.getElementById('svcIntegration').value;
+    document.getElementById('apiSection').style.display = v==='api_poll'?'block':'none';
+    document.getElementById('webhookSection').style.display = v==='webhook'?'block':'none';
+  }
+
+  function toggleAuthFields(){
+    const v = document.getElementById('apiAuthType').value;
+    document.getElementById('authHeaderRow').style.display = (v==='api_key'||v==='custom_header')?'block':'none';
+    document.getElementById('authUsernameRow').style.display = v==='basic'?'block':'none';
+    document.getElementById('authValueRow').style.display = v!=='none'?'block':'none';
+    const labels = {api_key:'API Key',bearer:'Bearer Token',basic:'Password',custom_header:'Header Value'};
+    document.getElementById('authValueLabel').textContent = labels[v]||'Credential';
+  }
+
+  function save(){
+    const editId = document.getElementById('svcEditId').value;
+    const data = {
+      service_id: document.getElementById('svcSid').value.trim(),
+      name: document.getElementById('svcName').value.trim(),
+      port: parseInt(document.getElementById('svcPort').value,10),
+      proto: document.getElementById('svcProto').value,
+      description: document.getElementById('svcDesc').value.trim(),
+      icon: document.getElementById('svcIcon').value.trim(),
+      integration: document.getElementById('svcIntegration').value,
+    };
+    if(data.integration==='api_poll'){
+      data.api_endpoint = document.getElementById('apiEndpoint').value.trim();
+      data.api_method = document.getElementById('apiMethod').value;
+      data.api_response_type = document.getElementById('apiResponseType').value;
+      data.api_status_path = document.getElementById('apiStatusPath').value.trim();
+      data.api_scanning_value = document.getElementById('apiScanningValue').value.trim();
+      data.poll_interval_s = parseInt(document.getElementById('apiPollInterval').value,10)||60;
+      data.api_verify_tls = document.getElementById('apiVerifyTls').value==='1';
+      data.api_auth_type = document.getElementById('apiAuthType').value;
+      if(data.api_auth_type!=='none'){
+        data.api_auth_header = document.getElementById('apiAuthHeader').value.trim();
+        data.api_auth_username = document.getElementById('apiAuthUsername').value.trim();
+        const pw = document.getElementById('apiAuthValue').value;
+        if(pw) data.api_auth_value = pw;
+      }
+    }
+    if(data.integration==='webhook'){
+      const ws = document.getElementById('webhookSecret').value;
+      if(ws) data.webhook_secret = ws;
+      data.webhook_sig_header = document.getElementById('webhookSigHeader').value.trim();
+      data.webhook_payload_path = document.getElementById('webhookPayloadPath').value.trim();
+      data.webhook_scanning_value = document.getElementById('webhookScanningValue').value.trim();
+    }
+    const url = editId ? '/api/custom-services/'+editId : '/api/custom-services';
+    const method = editId ? 'PUT' : 'POST';
+    fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+      .then(r=>r.json()).then(d=>{
+        if(d.ok){ closeModal(); load(); }
+        else { alert(d.error||'Failed to save'); }
+      }).catch(()=>alert('Network error'));
+  }
+
+  function toggle(id){
+    fetch('/api/custom-services/'+id+'/toggle',{method:'POST'}).then(r=>r.json()).then(d=>{
+      if(d.ok) load();
+    });
+  }
+
+  function test(id){
+    const btn = event.target;
+    btn.disabled = true; btn.textContent = 'Testing...';
+    fetch('/api/custom-services/'+id+'/test',{method:'POST'}).then(r=>r.json()).then(d=>{
+      btn.disabled = false; btn.textContent = 'Test';
+      const parts = [];
+      parts.push('TCP: '+(d.tcp?'OK':'FAIL'));
+      if(d.api!==undefined) parts.push('API: '+(d.api?'OK':'FAIL'));
+      if(d.detail) parts.push(d.detail);
+      alert(parts.join('\n'));
+    }).catch(()=>{ btn.disabled=false; btn.textContent='Test'; alert('Network error'); });
+  }
+
+  function openDelete(id, name){
+    _deleteId = id;
+    document.getElementById('deleteName').textContent = name;
+    document.getElementById('deleteModal').classList.add('active');
+  }
+  function closeDelete(){ document.getElementById('deleteModal').classList.remove('active'); _deleteId=null; }
+  function confirmDelete(){
+    if(!_deleteId) return;
+    fetch('/api/custom-services/'+_deleteId,{method:'DELETE'}).then(r=>r.json()).then(d=>{
+      closeDelete();
+      if(d.ok) load();
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', load);
+
+  return {openAdd, openEdit, closeModal, toggleSections, toggleAuthFields, save, toggle, test, openDelete, closeDelete, confirmDelete, load};
+})();
+</script>
+
+<style>
+.page-desc{color:var(--fg-muted);margin:-8px 0 16px;font-size:.92rem}
+.services-grid{display:flex;flex-direction:column;gap:12px}
+.service-card .card-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.service-port{color:var(--fg-muted);font-size:.85rem;font-family:var(--font-mono)}
+.service-meta{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.88rem}
+.service-meta span{white-space:nowrap}
+.service-actions{display:flex;gap:6px;flex-wrap:wrap}
+.form-row-inline{display:flex;gap:12px}.form-row-inline .form-row{flex:1}
+.form-divider{border:none;border-top:1px solid var(--border);margin:16px 0}
+.form-section-title{font-size:.92rem;font-weight:600;margin:12px 0 8px;color:var(--fg-muted)}
+.form-static{padding:8px 12px;background:var(--bg-alt);border-radius:6px;font-family:var(--font-mono);font-size:.85rem;word-break:break-all}
+.badge-info{background:var(--accent);color:var(--bg);font-size:.75rem;padding:2px 8px;border-radius:10px}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:90%;overflow:hidden;max-height:90vh;display:flex;flex-direction:column}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-header h3{margin:0}
+.modal-close{background:none;border:none;font-size:1.5rem;color:var(--fg-muted);cursor:pointer}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid var(--border)}
+</style>
+{% endblock %}

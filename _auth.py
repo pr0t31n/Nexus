@@ -6,6 +6,7 @@ import pr0t31n_auth as _mod
 _mod.configure(
     app_dir=_Path(__file__).parent,
     skip_prefixes=("/static/",),
+    public_prefixes=("/api/webhooks/",),
     app_name="Nexus",
     version_check_tools=[],
 )

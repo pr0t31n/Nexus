@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Nexus v2.5.0 — Network Fabric System
+Nexus v2.6.0 — Network Fabric System
 Fleet management hub for the pr0t31n toolkit. Discovers and manages
 tool instances across any network topology — VPN, overlay, cloud, or LAN.
+Custom services support for third-party tool monitoring.
 Runs on port 6000.
 """
 from __future__ import annotations
@@ -52,9 +53,10 @@ from routes.arsenal import arsenal_bp
 from routes.enrollment import enrollment_bp
 from routes.dispatch import dispatch_bp
 from routes.audit import audit_bp
+from routes.custom_services import custom_services_bp
 
 for bp in (admin_bp, fleet_bp, fabrics_bp, terminal_bp, arsenal_bp,
-           enrollment_bp, dispatch_bp, audit_bp):
+           enrollment_bp, dispatch_bp, audit_bp, custom_services_bp):
     app.register_blueprint(bp)
 
 
@@ -205,6 +207,11 @@ def dispatch_page():
 @app.route("/audit")
 def audit_page():
     return render_template("audit.html")
+
+
+@app.route("/custom-services")
+def services_page():
+    return render_template("custom_services.html")
 
 
 @app.route("/api/install-tool", methods=["POST"])

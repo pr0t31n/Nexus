@@ -1,4 +1,4 @@
-"""Nexus v2.5 — Database schema and connection management."""
+"""Nexus v2.6 — Database schema and connection management."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 _DB_PATH: Path | None = None
 _local = threading.local()
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def init_db(db_path: Path) -> None:
@@ -303,6 +303,39 @@ CREATE INDEX IF NOT EXISTS idx_ports_wl          ON service_ports(whitelisted);
 CREATE INDEX IF NOT EXISTS idx_node_hist_node    ON node_history(node_id);
 CREATE INDEX IF NOT EXISTS idx_node_hist_type    ON node_history(event_type);
 CREATE INDEX IF NOT EXISTS idx_node_hist_ts      ON node_history(timestamp);
+
+-- Custom third-party services (user-defined, DB-backed)
+CREATE TABLE IF NOT EXISTS custom_services (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id          TEXT NOT NULL UNIQUE,
+    name                TEXT NOT NULL,
+    port                INTEGER NOT NULL,
+    proto               TEXT NOT NULL DEFAULT 'https',
+    description         TEXT DEFAULT '',
+    icon                TEXT DEFAULT 'tool',
+    enabled             INTEGER DEFAULT 1,
+    integration         TEXT NOT NULL DEFAULT 'tcp_only',
+    api_endpoint        TEXT DEFAULT '',
+    api_method          TEXT DEFAULT 'GET',
+    api_auth_type       TEXT DEFAULT 'none',
+    api_auth_header     TEXT DEFAULT '',
+    api_auth_value_enc  TEXT DEFAULT '',
+    api_response_type   TEXT DEFAULT 'json',
+    api_status_path     TEXT DEFAULT '',
+    api_status_ok_value TEXT DEFAULT '',
+    api_verify_tls      INTEGER DEFAULT 0,
+    poll_interval_s     INTEGER DEFAULT 0,
+    webhook_secret_enc  TEXT DEFAULT '',
+    webhook_sig_header  TEXT DEFAULT 'X-Hub-Signature-256',
+    webhook_payload_path TEXT DEFAULT '',
+    last_status         TEXT DEFAULT '',
+    last_status_ts      TEXT DEFAULT '',
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_svc_sid    ON custom_services(service_id);
+CREATE INDEX IF NOT EXISTS idx_custom_svc_enabled ON custom_services(enabled);
 """
 
 
@@ -1457,6 +1490,108 @@ def audit_stats() -> dict:
         "audit_entries": audit_entries,
         "node_events": node_events,
     }
+
+
+# ---------------------------------------------------------------------------
+# Custom service helpers (Phase 7 — third-party service monitoring)
+# ---------------------------------------------------------------------------
+
+def create_custom_service(service_id: str, name: str, port: int, **kwargs) -> int:
+    conn = get_conn()
+    now = _now()
+    cols = ["service_id", "name", "port", "created_at", "updated_at"] + list(kwargs.keys())
+    vals = [service_id, name, port, now, now] + list(kwargs.values())
+    placeholders = ", ".join("?" for _ in cols)
+    col_names = ", ".join(cols)
+    cur = conn.execute(
+        f"INSERT INTO custom_services ({col_names}) VALUES ({placeholders})", vals
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_custom_service(svc_id: int, **kwargs) -> bool:
+    conn = get_conn()
+    if not kwargs:
+        return False
+    kwargs["updated_at"] = _now()
+    sets = ", ".join(f"{k} = ?" for k in kwargs)
+    vals = list(kwargs.values()) + [svc_id]
+    conn.execute(f"UPDATE custom_services SET {sets} WHERE id = ?", vals)
+    conn.commit()
+    return True
+
+
+def delete_custom_service(svc_id: int) -> bool:
+    conn = get_conn()
+    conn.execute("DELETE FROM custom_services WHERE id = ?", (svc_id,))
+    conn.commit()
+    return True
+
+
+def get_custom_service(svc_id: int) -> dict | None:
+    row = get_conn().execute(
+        "SELECT * FROM custom_services WHERE id = ?", (svc_id,)
+    ).fetchone()
+    return dict_row(row)
+
+
+def get_custom_service_by_sid(service_id: str) -> dict | None:
+    row = get_conn().execute(
+        "SELECT * FROM custom_services WHERE service_id = ?", (service_id,)
+    ).fetchone()
+    return dict_row(row)
+
+
+def get_custom_services(enabled_only: bool = False) -> list[dict]:
+    conn = get_conn()
+    if enabled_only:
+        rows = conn.execute(
+            "SELECT * FROM custom_services WHERE enabled = 1 ORDER BY name"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM custom_services ORDER BY name"
+        ).fetchall()
+    return dict_rows(rows)
+
+
+def update_custom_service_status(service_id: str, status: str) -> bool:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE custom_services SET last_status = ?, last_status_ts = ?, updated_at = ? "
+        "WHERE service_id = ?",
+        (status, _now(), _now(), service_id),
+    )
+    conn.commit()
+    return True
+
+
+def get_custom_services_as_registry() -> list[dict]:
+    svcs = get_custom_services(enabled_only=True)
+    result = []
+    for s in svcs:
+        result.append({
+            "id": s["service_id"],
+            "name": s["name"],
+            "port": s["port"],
+            "proto": s.get("proto", "https"),
+            "desc": s.get("description", ""),
+            "status_api": s["integration"] in ("api_poll", "webhook"),
+            "icon": s.get("icon", "tool"),
+            "_custom": True,
+            "_integration": s["integration"],
+            "_api_endpoint": s.get("api_endpoint", ""),
+            "_api_method": s.get("api_method", "GET"),
+            "_api_auth_type": s.get("api_auth_type", "none"),
+            "_api_auth_header": s.get("api_auth_header", ""),
+            "_api_auth_value_enc": s.get("api_auth_value_enc", ""),
+            "_api_response_type": s.get("api_response_type", "json"),
+            "_api_status_path": s.get("api_status_path", ""),
+            "_api_status_ok_value": s.get("api_status_ok_value", ""),
+            "_api_verify_tls": bool(s.get("api_verify_tls", 0)),
+        })
+    return result
 
 
 # ---------------------------------------------------------------------------

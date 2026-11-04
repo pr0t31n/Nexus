@@ -1,9 +1,10 @@
-"""Nexus v2.0 — Three-tier fleet discovery engine.
+"""Nexus v2.6 — Three-tier fleet discovery engine.
 
-Replaces the Phase 1 _do_scan() with fabric-aware discovery:
+Fabric-aware discovery with custom third-party service support:
   Tier 1: Active TCP port scan across fabric subnets
   Tier 2: Push-based agent checkin (POST /api/fleet/checkin)
   Tier 3: Adapter-driven discovery (per fabric type)
+  Custom: DB-backed third-party services (TCP, API poll, webhook)
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 from config import TOOL_REGISTRY
 from models import db as mdb
+from services import credential_store
 
 log = logging.getLogger("nexus.fleet_discovery")
 
@@ -134,13 +136,22 @@ class FleetDiscovery:
             last_seen=datetime.now(timezone.utc).isoformat(),
         )
 
-        for svc in TOOL_REGISTRY:
-            if svc["id"] == "nexus":
-                continue
+        all_services = [s for s in TOOL_REGISTRY if s["id"] != "nexus"]
+        try:
+            all_services.extend(mdb.get_custom_services_as_registry())
+        except Exception:
+            log.debug("Could not load custom services from DB")
+
+        for svc in all_services:
+            is_custom = svc.get("_custom", False)
             for ip in ips:
                 if self._tcp_open(ip, svc["port"], scan_timeout):
                     extra = {}
-                    if svc["status_api"]:
+                    if is_custom and svc.get("_integration") == "api_poll":
+                        info = self._probe_custom_api(ip, svc)
+                        if info:
+                            extra["scanning"] = 1 if info.get("scanning") else 0
+                    elif not is_custom and svc["status_api"]:
                         info = self._probe_tool_status(ip, svc["port"], svc["proto"])
                         if info:
                             extra["version"] = info.get("version", "")
@@ -172,8 +183,14 @@ class FleetDiscovery:
         local_hostname = socket.gethostname().split(".")[0]
         fab_id = fabric["id"]
 
-        tool_ports = [(svc["id"], svc["port"], svc["proto"], svc.get("status_api", False))
-                      for svc in TOOL_REGISTRY if svc["id"] != "nexus"]
+        all_services = [s for s in TOOL_REGISTRY if s["id"] != "nexus"]
+        try:
+            all_services.extend(mdb.get_custom_services_as_registry())
+        except Exception:
+            pass
+        tool_ports = [(svc["id"], svc["port"], svc["proto"], svc.get("status_api", False),
+                       svc.get("_custom", False), svc)
+                      for svc in all_services]
 
         for subnet_str in subnets:
             try:
@@ -188,14 +205,14 @@ class FleetDiscovery:
             tasks = []
             for host in hosts:
                 ip = str(host)
-                for tool_id, port, proto, has_api in tool_ports:
-                    tasks.append((ip, tool_id, port, proto, has_api))
+                for tool_id, port, proto, has_api, is_custom, svc_dict in tool_ports:
+                    tasks.append((ip, tool_id, port, proto, has_api, is_custom, svc_dict))
 
-            hits: list[tuple[str, str, int, str, bool]] = []
+            hits: list[tuple] = []
             with ThreadPoolExecutor(max_workers=workers) as ex:
                 futs = {
-                    ex.submit(self._tcp_open, ip, port, scan_timeout): (ip, tool_id, port, proto, has_api)
-                    for ip, tool_id, port, proto, has_api in tasks
+                    ex.submit(self._tcp_open, ip, port, scan_timeout): (ip, tool_id, port, proto, has_api, is_custom, svc_dict)
+                    for ip, tool_id, port, proto, has_api, is_custom, svc_dict in tasks
                 }
                 for fut in as_completed(futs):
                     try:
@@ -204,7 +221,7 @@ class FleetDiscovery:
                     except Exception:
                         pass
 
-            for ip, tool_id, port, proto, has_api in hits:
+            for ip, tool_id, port, proto, has_api, is_custom, svc_dict in hits:
                 hostname = local_hostname if ip in local_ips else self._resolve_hostname(ip)
                 nid = mdb.upsert_fleet_node(
                     hostname, ip_primary=ip, status="online",
@@ -212,7 +229,11 @@ class FleetDiscovery:
                 )
                 mdb.upsert_node_address(nid, fab_id, ip, lane_status="up")
                 extra = {}
-                if has_api:
+                if is_custom and svc_dict.get("_integration") == "api_poll":
+                    info = self._probe_custom_api(ip, svc_dict)
+                    if info:
+                        extra["scanning"] = 1 if info.get("scanning") else 0
+                elif not is_custom and has_api:
                     info = self._probe_tool_status(ip, port, proto)
                     if info:
                         extra["version"] = info.get("version", "")
@@ -360,6 +381,86 @@ class FleetDiscovery:
             "last_scan": self._last_scan.isoformat() if self._last_scan else None,
             "fabrics": fabrics,
         }
+
+    # ------------------------------------------------------------------
+    # Custom service probing
+    # ------------------------------------------------------------------
+
+    def _probe_custom_api(self, ip: str, svc: dict, timeout: float = 3.0) -> Optional[dict]:
+        try:
+            endpoint = svc.get("_api_endpoint", "").lstrip("/")
+            url = f"{svc['proto']}://{ip}:{svc['port']}/{endpoint}"
+            headers = {}
+            auth_type = svc.get("_api_auth_type", "none")
+            enc_val = svc.get("_api_auth_value_enc", "")
+            if auth_type != "none" and enc_val:
+                try:
+                    secret = credential_store.decrypt(enc_val)
+                except Exception:
+                    secret = ""
+                if secret:
+                    if auth_type == "bearer":
+                        headers["Authorization"] = f"Bearer {secret}"
+                    elif auth_type in ("api_key", "custom_header"):
+                        hdr = svc.get("_api_auth_header", "X-Api-Key")
+                        headers[hdr] = secret
+
+            method = svc.get("_api_method", "GET").upper()
+            verify = svc.get("_api_verify_tls", False)
+            if method == "POST":
+                r = requests.post(url, headers=headers, timeout=timeout, verify=verify)
+            else:
+                r = requests.get(url, headers=headers, timeout=timeout, verify=verify)
+
+            status_str = "online" if r.ok else f"error_{r.status_code}"
+            result = {"scanning": False}
+
+            status_path = svc.get("_api_status_path", "")
+            ok_value = svc.get("_api_status_ok_value", "")
+            if r.ok and status_path:
+                try:
+                    data = r.json()
+                    val = self._walk_json_path(data, status_path)
+                    if val is not None:
+                        status_str = str(val)
+                        if ok_value and str(val).lower() != ok_value.lower():
+                            result["scanning"] = True
+                except Exception:
+                    pass
+
+            mdb.update_custom_service_status(svc["id"], status_str)
+            return result
+        except Exception:
+            mdb.update_custom_service_status(svc["id"], "unreachable")
+            return None
+
+    def handle_webhook_status(self, service_id: str, payload: dict) -> bool:
+        svc = mdb.get_custom_service_by_sid(service_id)
+        if not svc:
+            return False
+        path = svc.get("webhook_payload_path", "")
+        status = "webhook_received"
+        if path and isinstance(payload, dict):
+            val = self._walk_json_path(payload, path)
+            if val is not None:
+                status = str(val)
+        mdb.update_custom_service_status(service_id, status)
+        if self._socketio:
+            self._socketio.emit("fleet_update", self.fleet_payload())
+        return True
+
+    @staticmethod
+    def _walk_json_path(data, path: str):
+        if not path:
+            return None
+        parts = path.split(".")
+        current = data
+        for p in parts:
+            if isinstance(current, dict) and p in current:
+                current = current[p]
+            else:
+                return None
+        return current
 
     # ------------------------------------------------------------------
     # Helpers
