@@ -1981,6 +1981,29 @@ a:hover { color: var(--accent-hover); }
   border: 1px dashed var(--border);
 }
 
+.vcell-latest {
+  background: rgba(100,149,237,.12);
+  color: #6495ed;
+  border: 1px solid rgba(100,149,237,.25);
+}
+
+.matrix-node-github {
+  font-style: italic;
+  color: var(--fg-2);
+  border-top: 1px solid var(--border);
+}
+
+.matrix-node-github::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6495ed;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 .arsenal-legend {
   display: flex;
   gap: 16px;

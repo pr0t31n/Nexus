@@ -11,6 +11,8 @@
   var _formVisible = false;
   var _socket = null;
   var _activeOutputs = {};
+  var _refreshPending = false;
+  var _refreshTimeout = null;
 
   // ── Helpers ────────────────────────────────────────────────────────
 
@@ -55,16 +57,18 @@
     var refresh = _$('lastRefresh');
     var summary = _$('arsenalSummary');
 
-    if (!data || !data.nodes || Object.keys(data.nodes).length === 0) {
+    var toolIds = data.registry || [];
+    var latest = data.latest || {};
+    var hasNodes = data && data.nodes && Object.keys(data.nodes).length > 0;
+    var hasLatest = Object.keys(latest).length > 0;
+
+    if (!hasNodes && !hasLatest) {
       if (head) head.innerHTML = '';
       if (body) body.innerHTML = '';
       if (empty) empty.style.display = '';
       return;
     }
     if (empty) empty.style.display = 'none';
-
-    var toolIds = data.registry || [];
-    var latest = data.latest || {};
 
     // Header row
     var hRow = '<tr><th class="matrix-node-header">Node</th>';
@@ -76,28 +80,46 @@
     hRow += '</tr>';
     if (head) head.innerHTML = hRow;
 
-    // Body rows
+    // Body rows — fleet nodes
     var html = '';
-    var hostnames = Object.keys(data.nodes).sort();
-    for (var h = 0; h < hostnames.length; h++) {
-      var hostname = hostnames[h];
-      var node = data.nodes[hostname];
-      var statusCls = node.status === 'online' ? 'matrix-node-online' : 'matrix-node-offline';
-      html += '<tr><td class="matrix-node-cell ' + statusCls + '">' + _esc(hostname) + '</td>';
-      var tools = node.tools || {};
-      for (var t = 0; t < toolIds.length; t++) {
-        var tId = toolIds[t];
-        var cell = tools[tId];
-        if (cell) {
-          var cls = 'vcell vcell-' + (cell.status || 'unknown');
-          var title = cell.local_version + (cell.latest_version ? ' / ' + cell.latest_version : '');
-          html += '<td class="matrix-cell"><span class="' + cls + '" title="' + _esc(title) + '">' + _esc(cell.local_version || '-') + '</span></td>';
+    if (hasNodes) {
+      var hostnames = Object.keys(data.nodes).sort();
+      for (var h = 0; h < hostnames.length; h++) {
+        var hostname = hostnames[h];
+        var node = data.nodes[hostname];
+        var statusCls = node.status === 'online' ? 'matrix-node-online' : 'matrix-node-offline';
+        html += '<tr><td class="matrix-node-cell ' + statusCls + '">' + _esc(hostname) + '</td>';
+        var tools = node.tools || {};
+        for (var t = 0; t < toolIds.length; t++) {
+          var tId = toolIds[t];
+          var cell = tools[tId];
+          if (cell) {
+            var cls = 'vcell vcell-' + (cell.status || 'unknown');
+            var title = cell.local_version + (cell.latest_version ? ' / ' + cell.latest_version : '');
+            html += '<td class="matrix-cell"><span class="' + cls + '" title="' + _esc(title) + '">' + _esc(cell.local_version || '-') + '</span></td>';
+          } else {
+            html += '<td class="matrix-cell"><span class="vcell vcell-none" title="Not installed">-</span></td>';
+          }
+        }
+        html += '</tr>';
+      }
+    }
+
+    // Latest (GitHub) row — always shown when latest data exists
+    if (hasLatest) {
+      html += '<tr><td class="matrix-node-cell matrix-node-github">Latest (GitHub)</td>';
+      for (var g = 0; g < toolIds.length; g++) {
+        var gId = toolIds[g];
+        var gVer = latest[gId];
+        if (gVer) {
+          html += '<td class="matrix-cell"><span class="vcell vcell-latest" title="GitHub latest">' + _esc(gVer) + '</span></td>';
         } else {
-          html += '<td class="matrix-cell"><span class="vcell vcell-none" title="Not installed">-</span></td>';
+          html += '<td class="matrix-cell"><span class="vcell vcell-none" title="No version found">-</span></td>';
         }
       }
       html += '</tr>';
     }
+
     if (body) body.innerHTML = html;
 
     // Refresh time
@@ -106,8 +128,8 @@
     }
 
     // Summary
-    if (summary && data.nodes) {
-      var total = 0, current = 0, behind = 0;
+    var total = 0, current = 0, behind = 0;
+    if (hasNodes) {
       for (var key in data.nodes) {
         var nt = data.nodes[key].tools || {};
         for (var tk in nt) {
@@ -116,7 +138,15 @@
           else if (nt[tk].status === 'behind') behind++;
         }
       }
-      summary.textContent = total + ' instances, ' + current + ' current' + (behind ? ', ' + behind + ' behind' : '');
+    }
+    if (summary) {
+      if (total) {
+        summary.textContent = total + ' instances, ' + current + ' current' + (behind ? ', ' + behind + ' behind' : '');
+      } else if (hasLatest) {
+        summary.textContent = Object.keys(latest).length + ' tools tracked (no fleet nodes registered)';
+      } else {
+        summary.textContent = '';
+      }
     }
   }
 
@@ -250,6 +280,7 @@
 
     _socket.on('version_matrix', function (data) {
       _renderMatrix(data);
+      if (_refreshPending) _resetRefreshBtn();
     });
 
     _socket.on('arsenal_started', function (data) {
@@ -272,17 +303,22 @@
 
   // ── Public API ────────────────────────────────────────────────────
 
+  function _resetRefreshBtn() {
+    _refreshPending = false;
+    if (_refreshTimeout) { clearTimeout(_refreshTimeout); _refreshTimeout = null; }
+    var btn = _$('refreshVersionsBtn');
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh Versions'; }
+  }
+
   function refreshVersions() {
+    if (_refreshPending) return;
     var btn = _$('refreshVersionsBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Refreshing...'; }
-    _json('/api/arsenal/versions/refresh', { method: 'POST' }).then(function () {
-      setTimeout(function () {
-        _json('/api/arsenal/versions').then(function (d) {
-          _renderMatrix(d);
-          if (btn) { btn.disabled = false; btn.textContent = 'Refresh Versions'; }
-        });
-      }, 3000);
+    _refreshPending = true;
+    _json('/api/arsenal/versions/refresh', { method: 'POST' }).catch(function () {
+      _resetRefreshBtn();
     });
+    _refreshTimeout = setTimeout(_resetRefreshBtn, 30000);
   }
 
   function toggleRunForm() {
