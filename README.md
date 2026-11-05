@@ -8,6 +8,9 @@ https://localhost:6000
 
 ---
 
+
+> **[View full documentation on the Codex Wiki](https://wiki.pr0t31n.com/tools/nexus)** — detailed features, CLI reference, findings catalogue, and integration guides.
+
 ## Features
 
 ### Fleet Management
