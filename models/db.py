@@ -22,6 +22,7 @@ def init_db(db_path: Path) -> None:
     conn.execute("PRAGMA foreign_keys=ON")
     _create_tables(conn)
     _migrate(conn)
+    _create_indexes(conn)
     _seed_defaults(conn)
     conn.commit()
 
@@ -52,7 +53,7 @@ def dict_rows(rows: list) -> list[dict]:
 # Schema
 # ---------------------------------------------------------------------------
 
-_TABLES = """
+_TABLE_DDL = """
 -- Fleet nodes (physical or virtual machines)
 CREATE TABLE IF NOT EXISTS fleet_nodes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -282,28 +283,6 @@ CREATE TABLE IF NOT EXISTS node_history (
     created_at      TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_fleet_status      ON fleet_nodes(status);
-CREATE INDEX IF NOT EXISTS idx_tool_node         ON tool_instances(node_id);
-CREATE INDEX IF NOT EXISTS idx_addr_node         ON node_network_addresses(node_id);
-CREATE INDEX IF NOT EXISTS idx_addr_fabric       ON node_network_addresses(fabric_id);
-CREATE INDEX IF NOT EXISTS idx_audit_ts          ON audit_log(ts);
-CREATE INDEX IF NOT EXISTS idx_audit_type        ON audit_log(event_type);
-CREATE INDEX IF NOT EXISTS idx_arsenal_node      ON arsenal_operations(node_id);
-CREATE INDEX IF NOT EXISTS idx_tunnel_node       ON tunnels(node_id);
-CREATE INDEX IF NOT EXISTS idx_enroll_node       ON enrollment_jobs(node_id);
-CREATE INDEX IF NOT EXISTS idx_dispatch_node     ON dispatch_jobs(node_id);
-CREATE INDEX IF NOT EXISTS idx_dispatch_status   ON dispatch_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_sessions_start    ON remote_sessions(timestamp_start);
-CREATE INDEX IF NOT EXISTS idx_sessions_ip       ON remote_sessions(source_ip);
-CREATE INDEX IF NOT EXISTS idx_sessions_method   ON remote_sessions(method);
-CREATE INDEX IF NOT EXISTS idx_sessions_result   ON remote_sessions(auth_result);
-CREATE INDEX IF NOT EXISTS idx_ports_port        ON service_ports(port);
-CREATE INDEX IF NOT EXISTS idx_ports_open        ON service_ports(is_open);
-CREATE INDEX IF NOT EXISTS idx_ports_wl          ON service_ports(whitelisted);
-CREATE INDEX IF NOT EXISTS idx_node_hist_node    ON node_history(node_id);
-CREATE INDEX IF NOT EXISTS idx_node_hist_type    ON node_history(event_type);
-CREATE INDEX IF NOT EXISTS idx_node_hist_ts      ON node_history(timestamp);
-
 -- Custom third-party services (user-defined, DB-backed)
 CREATE TABLE IF NOT EXISTS custom_services (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,14 +312,41 @@ CREATE TABLE IF NOT EXISTS custom_services (
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
 );
+"""
 
+_INDEX_DDL = """
+CREATE INDEX IF NOT EXISTS idx_fleet_status      ON fleet_nodes(status);
+CREATE INDEX IF NOT EXISTS idx_tool_node         ON tool_instances(node_id);
+CREATE INDEX IF NOT EXISTS idx_addr_node         ON node_network_addresses(node_id);
+CREATE INDEX IF NOT EXISTS idx_addr_fabric       ON node_network_addresses(fabric_id);
+CREATE INDEX IF NOT EXISTS idx_audit_ts          ON audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_type        ON audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_arsenal_node      ON arsenal_operations(node_id);
+CREATE INDEX IF NOT EXISTS idx_tunnel_node       ON tunnels(node_id);
+CREATE INDEX IF NOT EXISTS idx_enroll_node       ON enrollment_jobs(node_id);
+CREATE INDEX IF NOT EXISTS idx_dispatch_node     ON dispatch_jobs(node_id);
+CREATE INDEX IF NOT EXISTS idx_dispatch_status   ON dispatch_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_start    ON remote_sessions(timestamp_start);
+CREATE INDEX IF NOT EXISTS idx_sessions_ip       ON remote_sessions(source_ip);
+CREATE INDEX IF NOT EXISTS idx_sessions_method   ON remote_sessions(method);
+CREATE INDEX IF NOT EXISTS idx_sessions_result   ON remote_sessions(auth_result);
+CREATE INDEX IF NOT EXISTS idx_ports_port        ON service_ports(port);
+CREATE INDEX IF NOT EXISTS idx_ports_open        ON service_ports(is_open);
+CREATE INDEX IF NOT EXISTS idx_ports_wl          ON service_ports(whitelisted);
+CREATE INDEX IF NOT EXISTS idx_node_hist_node    ON node_history(node_id);
+CREATE INDEX IF NOT EXISTS idx_node_hist_type    ON node_history(event_type);
+CREATE INDEX IF NOT EXISTS idx_node_hist_ts      ON node_history(timestamp);
 CREATE INDEX IF NOT EXISTS idx_custom_svc_sid    ON custom_services(service_id);
 CREATE INDEX IF NOT EXISTS idx_custom_svc_enabled ON custom_services(enabled);
 """
 
 
 def _create_tables(conn: sqlite3.Connection) -> None:
-    conn.executescript(_TABLES)
+    conn.executescript(_TABLE_DDL)
+
+
+def _create_indexes(conn: sqlite3.Connection) -> None:
+    conn.executescript(_INDEX_DDL)
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
